@@ -3,12 +3,15 @@ import assert from 'node:assert/strict';
 
 import {
   OPENALEX_API_BASE,
+  S2_API_BASE,
   ZOTERO_API_BASE,
   toSearchView,
   searchOpenAlex,
+  searchSemanticScholar,
   lookupOpenAlexByDoi,
   citedByOpenAlex,
   mapOpenAlexWork,
+  mapS2Paper,
   invertOpenAlexAbstract,
   normalizeDoi,
   zoteroSearch,
@@ -141,6 +144,53 @@ test('citedByOpenAlex：DOI 先 lookup 再 filter=cites；work ID 直查', async
 test('citedByOpenAlex：解析不出 work ID 时抛错', async () => {
   stubFetch({});
   await assert.rejects(() => citedByOpenAlex('10.1/none'), /无法解析/);
+});
+
+test('mapS2Paper：网络 JSON → 精简 WorkItem（与 core mapS2Paper 对齐）', () => {
+  const paper = {
+    paperId: 'S2PID',
+    title: 'S2 Paper',
+    authors: [{ name: 'Alice' }, { name: 'Bob' }, { name: 'Alice' }],
+    year: 2022,
+    venue: 'NeurIPS',
+    externalIds: { DOI: 'https://doi.org/10.2/s2' },
+    abstract: '  hello   world  ',
+    citationCount: 7,
+    openAccessPdf: { url: 'https://oa.example/s2.pdf' },
+    url: 'https://semanticscholar.example/p/S2PID',
+  };
+  const item = mapS2Paper(paper);
+  assert.equal(item.title, 'S2 Paper');
+  assert.deepEqual(item.authors, ['Alice', 'Bob']);
+  assert.equal(item.year, 2022);
+  assert.equal(item.doi, '10.2/s2');
+  assert.equal(item.abstract, 'hello world');
+  assert.equal(item.oaPdfUrl, 'https://oa.example/s2.pdf');
+  assert.equal(item.source, 'semanticscholar');
+  assert.equal(item.externalIds.s2, 'S2PID');
+  // 无标题条目丢弃
+  assert.equal(mapS2Paper({ paperId: 'X' }), null);
+  assert.equal(mapS2Paper(null), null);
+});
+
+test('searchSemanticScholar：URL 组装（query/limit/fields/year）+ x-api-key 头', async () => {
+  const calls = stubFetch({ data: [{ paperId: 'P1', title: 'Hit', externalIds: {} }] });
+  const res = await searchSemanticScholar('laser', { limit: 5, yearFrom: 2019, yearTo: 2021, s2ApiKey: 'S2K' });
+  const url = new URL(calls[0].url);
+  assert.equal(url.origin + url.pathname, S2_API_BASE + '/paper/search');
+  assert.equal(url.searchParams.get('query'), 'laser');
+  assert.equal(url.searchParams.get('limit'), '5');
+  assert.equal(url.searchParams.get('year'), '2019-2021');
+  assert.ok(url.searchParams.get('fields').includes('externalIds'));
+  assert.equal(calls[0].init.headers['x-api-key'], 'S2K');
+  assert.equal(res.diagnostics.semanticscholar.ok, true);
+  assert.equal(res.items.length, 1);
+  assert.equal(res.items[0].source, 'semanticscholar');
+  // limit 夹紧 1..25；无密钥则不带 x-api-key 头
+  const calls2 = stubFetch({ data: [] });
+  await searchSemanticScholar('x', { limit: 999 });
+  assert.equal(new URL(calls2[0].url).searchParams.get('limit'), '25');
+  assert.equal(calls2[0].init.headers['x-api-key'], undefined);
 });
 
 test('zoteroSearch：本地 API 查询 + 映射 + 空标题过滤', async () => {

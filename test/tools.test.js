@@ -4,7 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { mkdtempSync, rmSync } from 'node:fs';
 
-import { toolDefinitions, compileParams, wrapToolError } from '../lib/tools.js';
+import { toolDefinitions, compileParams, wrapToolError, mergeSearchResults, LIMIT_CAP } from '../lib/tools.js';
 
 // 工具测试环境隔离：DSH_HOME 指向临时目录，保证 loadConfig 落到默认预算（不读真实用户配置）。
 const tmpHome = mkdtempSync(path.join(os.tmpdir(), 'lfs-tools-'));
@@ -102,6 +102,101 @@ test('lit_search：结果必须可无损 JSON 往返（模拟 DSH lossless 校�
   assert.ok(!('abstract' in res.items[0]), 'toTrimmedResult 应剔除 abstract 键');
   // lossless 往返：JSON.stringify → JSON.parse 后与原值深等
   assert.deepEqual(JSON.parse(JSON.stringify(res)), res);
+});
+
+test('mergeSearchResults：DOI 去重 + 交叉排序（OpenAlex 在前）+ LIMIT_CAP 夹紧', () => {
+  const oa = {
+    items: [
+      { title: 'A', doi: '10.1/a', source: 'openalex' },
+      { title: 'B', doi: '10.1/b', source: 'openalex' },
+      { title: 'C', doi: '', year: 2020, source: 'openalex' },
+    ],
+    diagnostics: { openalex: { ok: true, count: 3 } },
+  };
+  const s2 = {
+    items: [
+      { title: 'A-s2-dup', doi: '10.1/A', source: 'semanticscholar' }, // DOI 大小写不敏感去重
+      { title: 'D', doi: '10.1/d', source: 'semanticscholar' },
+      { title: 'c', doi: '', year: 2020, source: 'semanticscholar' }, // 标题+年份去重（小写化）
+    ],
+    diagnostics: { semanticscholar: { ok: true, count: 3 } },
+  };
+  const merged = mergeSearchResults(oa, s2);
+  assert.deepEqual(merged.items.map((i) => i.title), ['A', 'B', 'D', 'C']); // 去重项仍占槽位：round1 A/dup → round2 B/D → round3 C
+  assert.equal(merged.diagnostics.openalex.ok, true);
+  assert.equal(merged.diagnostics.semanticscholar.ok, true);
+  // 超量夹紧到 LIMIT_CAP
+  const big = {
+    items: Array.from({ length: LIMIT_CAP }, (_, i) => ({ title: `T${i}`, doi: `10.9/${i}` })),
+    diagnostics: {},
+  };
+  const capped = mergeSearchResults(big, big);
+  assert.equal(capped.items.length, LIMIT_CAP);
+});
+
+test('lit_search：配置 S2 密钥后双源检索，按 DOI 去重合并', async () => {
+  const prevS2 = process.env.LIT_SEARCH_S2_API_KEY;
+  process.env.LIT_SEARCH_S2_API_KEY = 'TEST-S2-KEY';
+  try {
+    const calls = stubFetch((_i, url) => {
+      if (url.includes('semanticscholar.org')) {
+        return { data: [{ paperId: 'P1', title: 'OA Title S2 副本', externalIds: { DOI: '10.1/dup' } }, { paperId: 'P2', title: 'S2 Only', externalIds: {} }] };
+      }
+      return { results: [mapOpenAlexWorkShim({ title: 'OA Title', abstract: 'a b', doi: '10.1/dup' })] };
+    });
+    const def = toolDefinitions.find((d) => d.name === 'lit_search');
+    const res = await def.execute({ query: 'dual' });
+    assert.equal(calls.length, 2); // OpenAlex + S2 各一次
+    assert.ok(calls.some((c) => c.url.includes('semanticscholar.org')));
+    const titles = res.items.map((i) => i.title);
+    assert.deepEqual(titles, ['OA Title', 'S2 Only']); // DOI 重复项去重，OpenAlex 优先
+    assert.equal(res.items[1].source, 'semanticscholar');
+    assert.equal(res.diagnostics.semanticscholar.ok, true);
+  } finally {
+    if (prevS2 === undefined) delete process.env.LIT_SEARCH_S2_API_KEY;
+    else process.env.LIT_SEARCH_S2_API_KEY = prevS2;
+  }
+});
+
+test('lit_search：无 S2 密钥时只走 OpenAlex（单源，兼容旧行为）', async () => {
+  const prevS2 = process.env.LIT_SEARCH_S2_API_KEY;
+  delete process.env.LIT_SEARCH_S2_API_KEY;
+  try {
+    const calls = stubFetch({ results: [] });
+    const def = toolDefinitions.find((d) => d.name === 'lit_search');
+    await def.execute({ query: 'single' });
+    assert.equal(calls.length, 1);
+    assert.ok(calls[0].url.includes('openalex.org'));
+  } finally {
+    if (prevS2 !== undefined) process.env.LIT_SEARCH_S2_API_KEY = prevS2;
+  }
+});
+
+test('lit_search：S2 失败不拖垮 OpenAlex（记入 diagnostics），双源均失败才抛错', async () => {
+  const prevS2 = process.env.LIT_SEARCH_S2_API_KEY;
+  process.env.LIT_SEARCH_S2_API_KEY = 'TEST-S2-KEY';
+  const realFetch = globalThis.fetch;
+  try {
+    // S2 401，OpenAlex 正常
+    globalThis.fetch = async (url) => {
+      if (String(url).includes('semanticscholar.org')) {
+        return { ok: false, status: 401, statusText: 'Unauthorized', text: async () => 'bad key' };
+      }
+      return { ok: true, status: 200, statusText: 'OK', text: async () => JSON.stringify({ results: [mapOpenAlexWorkShim({ title: 'OA', abstract: 'a', doi: '' })] }) };
+    };
+    const def = toolDefinitions.find((d) => d.name === 'lit_search');
+    const res = await def.execute({ query: 'degraded' });
+    assert.equal(res.items.length, 1);
+    assert.equal(res.diagnostics.semanticscholar.ok, false);
+    assert.match(res.diagnostics.semanticscholar.error, /401/);
+    // 双源均失败 → 抛错（由 index.js wrapToolError 包装）
+    globalThis.fetch = async () => ({ ok: false, status: 500, statusText: 'Server Error', text: async () => '' });
+    await assert.rejects(() => def.execute({ query: 'boom' }), /均失败/);
+  } finally {
+    globalThis.fetch = realFetch;
+    if (prevS2 === undefined) delete process.env.LIT_SEARCH_S2_API_KEY;
+    else process.env.LIT_SEARCH_S2_API_KEY = prevS2;
+  }
 });
 
 test('lit_search render：空结果分支不崩', () => {

@@ -5,7 +5,7 @@ import path from 'node:path';
 import { Readable } from 'node:stream';
 import { mkdtempSync, rmSync, existsSync } from 'node:fs';
 
-import { name, inject, apply, ROUTE, routeRegistry } from '../lib/index.js';
+import { name, inject, apply, ROUTE, DIAGNOSE_ROUTE, routeRegistry } from '../lib/index.js';
 
 // 路由测试用隔离 DSH_HOME，避免读写真实用户配置。
 const tmpHome = mkdtempSync(path.join(os.tmpdir(), 'lfs-index-'));
@@ -22,6 +22,7 @@ test('插件元信息：name/inject/ROUTE', () => {
   assert.equal(name, 'dsh-lit-full-search');
   assert.deepEqual(inject, ['tools', 'webServer']);
   assert.equal(ROUTE, '/lit-full-search/api/config');
+  assert.equal(DIAGNOSE_ROUTE, '/lit-full-search/api/diagnose');
 });
 
 function fakeReq(body, method, url) {
@@ -47,11 +48,11 @@ function fakeRes() {
 
 async function callHandle(method, url, body) {
   routeRegistry.clear(); // 测试隔离：每次重新注册路由
-  // 直接构造 ctx：只用 webServer 注册路由，然后取 handler 调一次
-  let handler = null;
+  // 直接构造 ctx：只用 webServer 注册路由，按 path 收集 handler 后调一次
+  const handlers = new Map();
   const fakeWS = {
     register({ path, handler: h }) {
-      handler = h;
+      handlers.set(path, h);
       return () => {};
     },
   };
@@ -63,7 +64,8 @@ async function callHandle(method, url, body) {
     effect() {},
   };
   apply(ctx);
-  assert.notEqual(handler, null);
+  const handler = handlers.get(new URL(url, 'http://localhost').pathname);
+  assert.ok(handler, `路由未注册：${url}`);
   const res = fakeRes();
   await handler(fakeReq(body, method, url), res);
   return { status: res.out.status, json: JSON.parse(res.out.body) };
@@ -96,8 +98,9 @@ test('apply：注册 5 个全局工具 + 路由', () => {
   apply(ctx);
   assert.equal(registeredTools.length, 5);
   assert.deepEqual(registeredTools.map((t) => t.name), ['lit_search', 'lit_abstract', 'lit_cited_by', 'zotero_search', 'zotero_save']);
-  assert.equal(routes.length, 1);
+  assert.equal(routes.length, 2);
   assert.equal(routes[0].path, ROUTE);
+  assert.equal(routes[1].path, DIAGNOSE_ROUTE);
   assert.equal(routes[0].kind, 'exact');
 });
 
@@ -112,27 +115,29 @@ test('registerRoute：refcount —— 重复 apply 只注册一次，引用归�
     },
   };
   const effects = [];
-  // 通过两次 apply（相同 webServer）模拟组合重载
+  // 通过两次 apply（相同 webServer）模拟组合重载；每次 apply 注册 2 条路由
   const mkCtx = () => ({
     get: (k) => (k === 'webServer' ? fakeWS : undefined),
     effect: (fn) => effects.push(fn),
   });
   apply(mkCtx());
   apply(mkCtx());
-  assert.equal(registerCalls, 1); // 第二次 apply 走 refs 计数，不再真实注册
+  assert.equal(registerCalls, 2); // 第二次 apply 走 refs 计数，不再真实注册
 
-  // effects：tools 缺失（mkCtx 只给 webServer），每个 apply 只推 1 个路由 effect
+  // effects：tools 缺失（mkCtx 只给 webServer），每个 apply 推 2 个路由 effect（顺序：apply1 ROUTE、apply1 DIAGNOSE、apply2 ROUTE、apply2 DIAGNOSE）
   const returned = effects.map((fn) => fn());
-  const routeRelease1 = returned[0];
-  const routeRelease2 = returned[1];
-  routeRelease1(); // refs 2 → 1
+  assert.equal(returned.length, 4);
+  returned[0](); // ROUTE refs 2 → 1
+  returned[1](); // DIAGNOSE refs 2 → 1
   assert.equal(disposeCalls, 0);
-  routeRelease2(); // refs 1 → 0 → 真正 dispose
+  returned[2](); // ROUTE refs 1 → 0 → dispose
   assert.equal(disposeCalls, 1);
+  returned[3](); // DIAGNOSE refs 1 → 0 → dispose
+  assert.equal(disposeCalls, 2);
 
   // 引用归零后再次 apply → 重新注册
   apply(mkCtx());
-  assert.equal(registerCalls, 2);
+  assert.equal(registerCalls, 4);
 });
 
 test('handleConfig：GET 返回安全视图（键只给掩码/状态，不下发明文）', async () => {
@@ -179,4 +184,44 @@ test('handleConfig：PUT 与 POST 等价', async () => {
   const { status, json } = await callHandle('PUT', ROUTE, JSON.stringify({ mailto: 'me@x.y' }));
   assert.equal(status, 200);
   assert.equal(json.config.mailto, 'me@x.y');
+});
+
+test('handleDiagnose：GET 返回五项检查（stub fetch，防真实网络）；非 GET 405', async () => {
+  const realFetch = globalThis.fetch;
+  // 清空 LIT_SEARCH_* 环境变量，避免运行环境影响「密钥未设置」断言
+  const savedEnv = {};
+  for (const key of Object.keys(process.env)) {
+    if (key.startsWith('LIT_SEARCH_')) {
+      savedEnv[key] = process.env[key];
+      delete process.env[key];
+    }
+  }
+  globalThis.fetch = async (url) => {
+    const u = String(url);
+    if (u.includes('api.openalex.org')) {
+      return { ok: true, status: 200, statusText: 'OK', headers: { get: () => null }, text: async () => '{}' };
+    }
+    if (u.includes('localhost:23119')) {
+      return { ok: true, status: 200, statusText: 'OK', headers: { get: (k) => (k === 'X-Zotero-Version' ? '10.0.0' : null) }, text: async () => '[]' };
+    }
+    throw new Error('未预期的请求：' + u);
+  };
+  try {
+    const { status, json } = await callHandle('GET', DIAGNOSE_ROUTE);
+    assert.equal(status, 200);
+    assert.equal(json.ok, true);
+    assert.ok(json.ranAt);
+    assert.equal(json.checks.length, 5);
+    const zotero = json.checks.find((c) => c.id === 'zotero-api');
+    assert.equal(zotero.ok, true);
+    assert.match(zotero.detail, /10\.0\.0/);
+    // 未配置密钥 → 提示型失败
+    assert.equal(json.checks.find((c) => c.id === 'zotero-key').ok, false);
+
+    const bad = await callHandle('POST', DIAGNOSE_ROUTE, '{}');
+    assert.equal(bad.status, 405);
+  } finally {
+    globalThis.fetch = realFetch;
+    for (const [key, value] of Object.entries(savedEnv)) process.env[key] = value;
+  }
 });

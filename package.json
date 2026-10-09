@@ -1,7 +1,7 @@
 {
   "name": "dsh-lit-full-search",
-  "version": "0.1.3",
-  "description": "DSH 文献调研助手：全局 5 个 model 工具（lit_search / lit_abstract / lit_cited_by / zotero_search / zotero_save）+ 侧栏「文献搜索引擎设置」面板（密钥 + 检索预算）。零依赖，直连 OpenAlex 与本地 Zotero API。",
+  "version": "1.0.1",
+  "description": "DSH 文献检索插件：侧栏「全面搜索设置」面板（OpenAlex 身份、Semantic Scholar 与 Zotero 密钥、检索预算）+ 全局检索/归档工具 + 服务诊断。",
   "type": "module",
   "main": "lib/index.js",
   "exports": {
@@ -28,19 +28,21 @@
     "lib/config.js",
     "lib/light-core.js",
     "lib/tools.js",
+    "lib/diagnostics.js",
     "lib/client.js",
     "cordis.patch.yml",
     "README.md"
   ],
   "scripts": {
     "test": "node --test test/",
-    "check": "node --check lib/index.js && node --check lib/config.js && node --check lib/light-core.js && node --check lib/tools.js && node --check lib/client.js"
+    "check": "node --check lib/index.js && node --check lib/config.js && node --check lib/light-core.js && node --check lib/tools.js && node --check lib/diagnostics.js && node --check lib/client.js"
   },
   "keywords": [
     "dsh",
     "plugin",
     "literature",
     "openalex",
+    "semanticscholar",
     "zotero"
   ]
 }

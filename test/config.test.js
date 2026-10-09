@@ -30,7 +30,7 @@ test('ENV_NAMES 与核心环境变量保持一致', () => {
 
 test('defaultConfig 不包含任何密钥', () => {
   const cfg = defaultConfig();
-  assert.deepEqual(cfg, { mailto: '', openAlexApiKey: '', zoteroKey: '', budget: { ...DEFAULT_BUDGET } });
+  assert.deepEqual(cfg, { mailto: '', openAlexApiKey: '', s2ApiKey: '', zoteroKey: '', budget: { ...DEFAULT_BUDGET } });
 });
 
 test('clampInt：非法值回落 fallback，越界夹紧', () => {
@@ -65,22 +65,28 @@ test('maskKey：空/短 key 与尾 4 位掩码', () => {
 });
 
 test('applyPatch：密钥 undefined 保留 / null 清空 / 字符串覆盖；budget 合并夹紧', () => {
-  const current = { mailto: 'a@b.c', openAlexApiKey: 'AAA', zoteroKey: '', budget: { ...DEFAULT_BUDGET } };
-  const next = applyPatch(current, { openAlexApiKey: null, mailto: 'new@x.y', budget: { searchLimit: 3, citedByLimit: 999 } });
+  const current = { mailto: 'a@b.c', openAlexApiKey: 'AAA', s2ApiKey: 'S2-OLD', zoteroKey: '', budget: { ...DEFAULT_BUDGET } };
+  const next = applyPatch(current, { openAlexApiKey: null, s2ApiKey: 'S2-NEW', mailto: 'new@x.y', budget: { searchLimit: 3, citedByLimit: 999 } });
   assert.equal(next.openAlexApiKey, '');
+  assert.equal(next.s2ApiKey, 'S2-NEW');
   assert.equal(next.mailto, 'new@x.y');
   assert.equal(next.budget.searchLimit, 3);
   assert.equal(next.budget.citedByLimit, 25);
   assert.equal(next.budget.zoteroLimit, 20); // 未传字段保留
+  // undefined → 保留现值
+  assert.equal(applyPatch(current, {}).s2ApiKey, 'S2-OLD');
   // 非字符串密钥字段抛错
   assert.throws(() => applyPatch(current, { zoteroKey: 42 }), /必须是字符串/);
 });
 
 test('publicView：不暴露明文，只给布尔状态与掩码', () => {
-  const view = publicView({ mailto: '', openAlexApiKey: 'SECRET-KEY-1234', zoteroKey: '', budget: { ...DEFAULT_BUDGET } });
+  const view = publicView({ mailto: '', openAlexApiKey: 'SECRET-KEY-1234', s2ApiKey: 'S2-KEY-5678', zoteroKey: '', budget: { ...DEFAULT_BUDGET } });
   assert.equal(view.openAlexApiKeySet, true);
   assert.equal(view.openAlexApiKeyMask, '…1234');
   assert.equal(view.openAlexApiKey, undefined);
+  assert.equal(view.s2ApiKeySet, true);
+  assert.equal(view.s2ApiKeyMask, '…5678');
+  assert.equal(view.s2ApiKey, undefined);
   assert.equal(view.zoteroKeySet, false);
   assert.equal(view.budget.searchLimit, 10);
 });
@@ -97,6 +103,7 @@ test('loadConfig/saveConfig：文件往返 + 损坏 JSON 回落默认 + 缺字�
     cfg = loadConfig(dir);
     assert.equal(cfg.mailto, 'x@y.z');
     assert.equal(cfg.openAlexApiKey, 'KEY');
+    assert.equal(cfg.s2ApiKey, ''); // 旧版文件缺字段 → 默认空串
     assert.equal(cfg.budget.searchLimit, 4);
     assert.equal(cfg.budget.abstractChars, 3000);
     // 损坏 JSON → 默认（不抛）
@@ -116,17 +123,21 @@ test('loadConfig/saveConfig：文件往返 + 损坏 JSON 回落默认 + 缺字�
 test('resolveAuth：配置文件 > 环境变量 > 空串', () => {
   const prevMail = process.env[ENV_NAMES.mailto];
   const prevKey = process.env[ENV_NAMES.openAlexApiKey];
+  const prevS2 = process.env[ENV_NAMES.s2ApiKey];
   try {
     process.env[ENV_NAMES.mailto] = 'env@x.y';
     process.env[ENV_NAMES.openAlexApiKey] = 'ENV-KEY';
+    process.env[ENV_NAMES.s2ApiKey] = 'ENV-S2';
     // 文件有值 → 文件优先
-    let auth = resolveAuth({ mailto: 'file@x.y', openAlexApiKey: 'FILE-KEY', s2ApiKey: '', zoteroKey: '' });
+    let auth = resolveAuth({ mailto: 'file@x.y', openAlexApiKey: 'FILE-KEY', s2ApiKey: 'FILE-S2', zoteroKey: '' });
     assert.equal(auth.mailto, 'file@x.y');
     assert.equal(auth.openAlexApiKey, 'FILE-KEY');
+    assert.equal(auth.s2ApiKey, 'FILE-S2');
     // 文件空 → env
     auth = resolveAuth({ mailto: '', openAlexApiKey: '', s2ApiKey: '', zoteroKey: '' });
     assert.equal(auth.mailto, 'env@x.y');
     assert.equal(auth.openAlexApiKey, 'ENV-KEY');
+    assert.equal(auth.s2ApiKey, 'ENV-S2');
     // 全空 → ''
     auth = resolveAuth({ mailto: '', openAlexApiKey: '', s2ApiKey: '', zoteroKey: '' });
     assert.equal(auth.zoteroKey, '');
@@ -135,6 +146,8 @@ test('resolveAuth：配置文件 > 环境变量 > 空串', () => {
     else process.env[ENV_NAMES.mailto] = prevMail;
     if (prevKey === undefined) delete process.env[ENV_NAMES.openAlexApiKey];
     else process.env[ENV_NAMES.openAlexApiKey] = prevKey;
+    if (prevS2 === undefined) delete process.env[ENV_NAMES.s2ApiKey];
+    else process.env[ENV_NAMES.s2ApiKey] = prevS2;
   }
 });
 
