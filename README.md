@@ -1,7 +1,7 @@
 # dsh-lit-full-search
 
 DSH 文献检索插件（轻量版，零 npm 依赖）。在**任何模式 / 任何 preset** 下注册 5 个全局
-model 工具，并提供侧栏「全面搜索设置」面板（密钥、检索预算、服务诊断）。
+model 工具，并提供侧栏「全面文献搜索设置」面板（密钥、检索预算、服务诊断）。
 
 直连 [OpenAlex](https://docs.openalex.org)、[Semantic Scholar](https://api.semanticscholar.org)
 与本地 Zotero API（`http://localhost:23119`）。
@@ -28,9 +28,9 @@ dsh plugin --profile web add <绝对路径>/dsh-lit-full-search-1.0.1.tgz
 > 结果统一带卡片渲染（`meta.card='literature'`），与 dsh-literature-search 0.3.0 的
 > 浏览器端文献卡片渲染器兼容。
 
-## 设置面板（「全面搜索设置」）
+## 设置面板（「全面文献搜索设置」）
 
-左侧栏「定时任务」下方的「全面搜索设置」图标打开设置页（main keyed 面板，
+左侧栏「定时任务」下方的「全面文献搜索设置」图标打开设置页（main keyed 面板，
 id `lit-full-search-settings`），分四段：
 
 - **身份标识** —— `mailto`（OpenAlex 礼貌邮箱，提升限流配额；兜底 `LIT_SEARCH_MAILTO`）
