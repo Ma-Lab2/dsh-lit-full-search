@@ -185,6 +185,45 @@ test('zoteroCreateItem：成功读 successful.key，失败读 failed.message', a
   await assert.rejects(() => zoteroCreateItem({ title: 'T' }, {}), /API key required/);
 });
 
+test('zoteroCreateItem：写前自动 ping 学习 Zotero-Server-ID（Zotero 10+ 428 防护）', async () => {
+  const calls = [];
+  globalThis.fetch = async (url, init = {}) => {
+    calls.push({ url: String(url), init });
+    if (String(url) === `${ZOTERO_API_BASE}/`) {
+      return { ok: true, status: 200, statusText: 'OK', headers: { get: (k) => (k === 'Zotero-Server-ID' ? 'SID-1' : null) }, text: async () => '' };
+    }
+    return { ok: true, status: 200, statusText: 'OK', headers: { get: () => null }, text: async () => JSON.stringify({ successful: { '0': { key: 'NEWK2' } } }) };
+  };
+  const res = await zoteroCreateItem({ title: 'T' }, { zoteroKey: 'K' });
+  assert.equal(res.itemKey, 'NEWK2');
+  assert.equal(calls.length, 2);
+  assert.equal(calls[0].url, `${ZOTERO_API_BASE}/`); // 先 ping
+  assert.equal(calls[1].init.method, 'POST');
+  assert.equal(calls[1].init.headers['Zotero-Server-ID'], 'SID-1');
+  assert.equal(calls[1].init.headers['Zotero-API-Key'], 'K');
+  assert.equal(calls[1].init.headers['Connection'], 'close');
+});
+
+test('zoteroCreateItem：已从读请求学习 Server-ID 后不再 ping', async () => {
+  const calls = [];
+  globalThis.fetch = async (url, init = {}) => {
+    calls.push({ url: String(url), init });
+    const isWrite = init.method === 'POST';
+    return {
+      ok: true,
+      status: 200,
+      statusText: 'OK',
+      headers: { get: (k) => (k === 'Zotero-Server-ID' ? 'SID-2' : null) },
+      text: async () => (isWrite ? JSON.stringify({ successful: { '0': { key: 'NEWK3' } } }) : JSON.stringify([])),
+    };
+  };
+  await zoteroSearch('x'); // 读请求响应头学习 SID-2（覆盖 SID-1）
+  const res = await zoteroCreateItem({ title: 'T' }, {});
+  assert.equal(res.itemKey, 'NEWK3');
+  assert.equal(calls.length, 2); // 检索 + 写入，无 ping
+  assert.equal(calls[1].init.headers['Zotero-Server-ID'], 'SID-2');
+});
+
 test('toSearchView：精简单投影', () => {
   const view = toSearchView({ title: 'T', authors: ['a', 'b'], year: 2020, venue: 'V', doi: 'd', url: 'u', citationCount: 3, source: 's' });
   assert.deepEqual(view, { title: 'T', authors: ['a', 'b'], year: 2020, venue: 'V', doi: 'd', url: 'u', citationCount: 3, source: 's' });

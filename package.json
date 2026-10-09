@@ -1,6 +1,6 @@
 {
   "name": "dsh-lit-full-search",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "DSH 文献调研助手：全局 5 个 model 工具（lit_search / lit_abstract / lit_cited_by / zotero_search / zotero_save）+ 侧栏「文献搜索引擎设置」面板（密钥 + 检索预算）。零依赖，直连 OpenAlex 与本地 Zotero API。",
   "type": "module",
   "main": "lib/index.js",
