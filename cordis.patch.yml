@@ -1,0 +1,12 @@
+# dsh-lit-full-search —— Host 插件行（单行声明，无 preset）
+#
+# 安装方式：在插件目录执行 `npm pack`，然后在 DSH 里
+#   dsh plugin --profile web add <生成的 .tgz 文件路径>
+# 重启 DSH 后生效。
+#
+# 该行只注册 Host 端插件（全局 5 工具 + 配置路由），不声明 agent preset；
+# 因此任何模式 / 任何 preset 下 5 个工具都可见（dsh-tools 根作用域注册，全局层最先）。
+# Web 客户端（侧栏设置图标 + 设置面板）由 dsh.client 注入。
+- insert:
+    - id: dsh-lit-full-search
+      name: 'dsh-lit-full-search'
