@@ -39,7 +39,9 @@ def write_manifest(repo_root: Path) -> Path:
             raise FileNotFoundError(f"Managed file missing for manifest: {rel}")
         lines.append(f"{sha256_file(path)}  {rel}")
     manifest_path.parent.mkdir(parents=True, exist_ok=True)
-    manifest_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    # newline="\n"：Windows 上 text 模式会把 \n 翻成 \r\n，而哈希是按字节算的，
+    # 会导致 lock 里的 template_sha256 变成平台相关（Linux CI 必然不匹配）。
+    manifest_path.write_text("\n".join(lines) + "\n", encoding="utf-8", newline="\n")
     return manifest_path
 
 
@@ -65,7 +67,7 @@ def write_lock(repo_root: Path, skill_version: str, skill_repo: str):
         "template_sha256": sha256_file(manifest_path),
     }
 
-    lock_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    lock_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8", newline="\n")
     return lock_path
 
 
