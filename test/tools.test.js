@@ -4,7 +4,28 @@ import os from 'node:os';
 import path from 'node:path';
 import { mkdtempSync, rmSync } from 'node:fs';
 
-import { toolDefinitions, compileParams, wrapToolError, mergeSearchResults, LIMIT_CAP } from '../lib/tools.js';
+import { toolDefinitions, compileParams, wrapToolError, mergeSearchResults, LIMIT_CAP, sourceFailureNote } from '../lib/tools.js';
+import { __setS2IntervalForTest } from '../lib/light-core.js';
+
+// 关掉 S2 节流与 429 退避，避免拖慢套件（节流行为在 light-core.test.js 单独测）。
+__setS2IntervalForTest(0);
+
+test('sourceFailureNote：只在有源失败时输出警告，并带上错误信息', () => {
+  assert.equal(sourceFailureNote(undefined), '');
+  assert.equal(sourceFailureNote({ openalex: { ok: true }, semanticscholar: { ok: true } }), '');
+  const note = sourceFailureNote({ openalex: { ok: true }, semanticscholar: { ok: false, error: 'HTTP 429 Too Many Requests' } });
+  assert.match(note, /Semantic Scholar（HTTP 429 Too Many Requests）/);
+  assert.doesNotMatch(note, /OpenAlex/);
+});
+
+test('lit_search render：S2 失败时在模型可见文本里给出警告', () => {
+  const value = {
+    items: [{ title: 'T', authors: ['A'], year: 2020, doi: '', source: 'openalex', url: 'u' }],
+    diagnostics: { openalex: { ok: true, count: 1 }, semanticscholar: { ok: false, error: 'HTTP 429' } },
+  };
+  const text = toolDefinitions.find((d) => d.name === 'lit_search').render({ query: 'q' }, value)[0].text;
+  assert.match(text, /⚠ 以下数据源本次失败.*Semantic Scholar（HTTP 429）/);
+});
 
 // 工具测试环境隔离：DSH_HOME 指向临时目录，保证 loadConfig 落到默认预算（不读真实用户配置）。
 const tmpHome = mkdtempSync(path.join(os.tmpdir(), 'lfs-tools-'));

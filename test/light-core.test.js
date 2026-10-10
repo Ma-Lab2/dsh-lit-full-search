@@ -17,7 +17,11 @@ import {
   zoteroSearch,
   zoteroFindByDoi,
   zoteroCreateItem,
+  __setS2IntervalForTest,
 } from '../lib/light-core.js';
+
+// 单测里关掉 S2 节流（默认 1.1s 间隔会拖慢套件）；节流行为由专门用例开回来测。
+__setS2IntervalForTest(0);
 
 /** 覆盖全局 fetch 的测试替身：记录最后一次请求 {url, init}，返回给定 JSON。 */
 function stubFetch(respond) {
@@ -171,6 +175,104 @@ test('mapS2Paper：网络 JSON → 精简 WorkItem（与 core mapS2Paper 对齐�
   // 无标题条目丢弃
   assert.equal(mapS2Paper({ paperId: 'X' }), null);
   assert.equal(mapS2Paper(null), null);
+});
+
+test('searchSemanticScholar：并发请求串行排队并保持最小间隔（S2 个人 key 配额 1 rps）', async () => {
+  __setS2IntervalForTest(80);
+  try {
+    const times = [];
+    stubFetch(() => (times.push(Date.now()), { data: [] }));
+    await Promise.all([searchSemanticScholar('a', { s2ApiKey: 'K' }), searchSemanticScholar('b', { s2ApiKey: 'K' }), searchSemanticScholar('c', { s2ApiKey: 'K' })]);
+    assert.equal(times.length, 3);
+    for (let i = 1; i < times.length; i += 1) assert.ok(times[i] - times[i - 1] >= 70, `间隔过短：${times[i] - times[i - 1]}ms`);
+  } finally {
+    __setS2IntervalForTest(0);
+  }
+});
+
+test('searchSemanticScholar：429 退避后重试一次；二次 429 才抛错', async () => {
+  let n = 0;
+  globalThis.fetch = async () => {
+    n += 1;
+    if (n === 1) return { ok: false, status: 429, statusText: 'Too Many Requests', headers: new Map(), text: async () => '{"message":"Too Many Requests"}' };
+    return { ok: true, status: 200, headers: new Map(), text: async () => JSON.stringify({ data: [{ paperId: 'P', title: 'T', externalIds: {} }] }) };
+  };
+  const res = await searchSemanticScholar('x', { s2ApiKey: 'K' });
+  assert.equal(n, 2);
+  assert.equal(res.items.length, 1);
+
+  n = 0;
+  globalThis.fetch = async () => {
+    n += 1;
+    return { ok: false, status: 429, statusText: 'Too Many Requests', headers: new Map(), text: async () => '' };
+  };
+  await assert.rejects(() => searchSemanticScholar('x', { s2ApiKey: 'K' }), /429/);
+  assert.equal(n, 2);
+  // 失败不能卡住队列
+  stubFetch({ data: [] });
+  assert.equal((await searchSemanticScholar('y', { s2ApiKey: 'K' })).items.length, 0);
+});
+
+test('searchSemanticScholar：瞬时网络失败（如 ECONNRESET）重试一次即恢复，不熔断', async () => {
+  let n = 0;
+  globalThis.fetch = async () => {
+    n += 1;
+    if (n === 1) throw new TypeError('read ECONNRESET');
+    return { ok: true, status: 200, headers: new Map(), text: async () => JSON.stringify({ data: [{ paperId: 'P', title: 'T', externalIds: {} }] }) };
+  };
+  const res = await searchSemanticScholar('x', { s2ApiKey: 'K' });
+  assert.equal(n, 2);
+  assert.equal(res.items.length, 1);
+  // 未熔断：下一次请求照常发出
+  await searchSemanticScholar('y', { s2ApiKey: 'K' });
+  assert.equal(n, 3);
+});
+
+test('searchSemanticScholar：网络层失败后熔断，后续请求不再逐个等连接超时', async () => {
+  let n = 0;
+  globalThis.fetch = async () => {
+    n += 1;
+    throw new TypeError('fetch failed');
+  };
+  await assert.rejects(() => searchSemanticScholar('a', { s2ApiKey: 'K' }), /网络请求失败/);
+  await assert.rejects(() => searchSemanticScholar('b', { s2ApiKey: 'K' }), /网络不可达/);
+  assert.equal(n, 2, '首次网络失败重试一次（代理→直连），之后熔断期间不再发请求');
+  __setS2IntervalForTest(0); // 重置熔断，避免影响后续用例
+});
+
+test('proxyFetch：经 CONNECT 隧道发请求；代理不可达时给出明确错误', async () => {
+  const { default: http } = await import('node:http');
+  const { default: net } = await import('node:net');
+  const { proxyFetch } = await import('../lib/light-core.js');
+  // 本地 CONNECT 代理：记录隧道目标后直接拒绝（不出网，验证请求确实经过代理）
+  const seen = [];
+  const server = http.createServer();
+  server.on('connect', (req, socket) => {
+    seen.push(req.url);
+    socket.end('HTTP/1.1 403 Forbidden\r\n\r\n');
+  });
+  await new Promise((r) => server.listen(0, '127.0.0.1', r));
+  const { port } = server.address();
+  try {
+    await assert.rejects(() => proxyFetch('https://api.semanticscholar.org/x', {}, `http://127.0.0.1:${port}`), /拒绝隧道：HTTP 403/);
+    assert.deepEqual(seen, ['api.semanticscholar.org:443']);
+  } finally {
+    await new Promise((r) => server.close(r));
+  }
+  // 取一个空闲端口后关闭，确保无人监听
+  const probe = net.createServer();
+  await new Promise((r) => probe.listen(0, '127.0.0.1', r));
+  const dead = probe.address().port;
+  await new Promise((r) => probe.close(r));
+  await assert.rejects(() => proxyFetch('https://example.org/', {}, `http://127.0.0.1:${dead}`), /代理 127\.0\.0\.1:\d+ 不可用/);
+
+  // externalFetch：代理本身连不上 → 回落直连
+  const { externalFetch } = await import('../lib/light-core.js');
+  const direct = [];
+  globalThis.fetch = async (u) => (direct.push(u), { ok: true, status: 200, headers: new Map(), text: async () => '{}' });
+  const res = await externalFetch('https://example.org/', {}, `http://127.0.0.1:${dead}`);
+  assert.equal(res.status, 200);
+  assert.deepEqual(direct, ['https://example.org/']);
 });
 
 test('searchSemanticScholar：URL 组装（query/limit/fields/year）+ x-api-key 头', async () => {

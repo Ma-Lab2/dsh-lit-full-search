@@ -19,6 +19,9 @@ import {
   saveConfig,
   resolveAuth,
   resolveBudget,
+  validateProxy,
+  resolveProxy,
+  GENERIC_PROXY_ENV,
 } from '../lib/config.js';
 
 test('ENV_NAMES 与核心环境变量保持一致', () => {
@@ -30,7 +33,39 @@ test('ENV_NAMES 与核心环境变量保持一致', () => {
 
 test('defaultConfig 不包含任何密钥', () => {
   const cfg = defaultConfig();
-  assert.deepEqual(cfg, { mailto: '', openAlexApiKey: '', s2ApiKey: '', zoteroKey: '', budget: { ...DEFAULT_BUDGET } });
+  assert.deepEqual(cfg, { mailto: '', openAlexApiKey: '', s2ApiKey: '', zoteroKey: '', proxy: '', budget: { ...DEFAULT_BUDGET } });
+});
+
+test('proxy：校验 / 合并 / 优先级（文件 > LIT_SEARCH_PROXY > HTTPS_PROXY > 直连）', () => {
+  assert.equal(validateProxy(''), '');
+  assert.equal(validateProxy(' http://127.0.0.1:7890 '), 'http://127.0.0.1:7890');
+  assert.throws(() => validateProxy('127.0.0.1:7890'), /代理地址无效/);
+  assert.throws(() => validateProxy('socks5://127.0.0.1:7890'), /只支持 http/);
+
+  const base = defaultConfig();
+  assert.equal(applyPatch(base, { proxy: 'http://p:1' }).proxy, 'http://p:1');
+  assert.equal(applyPatch({ ...base, proxy: 'http://p:1' }, {}).proxy, 'http://p:1', '未传则保留');
+  assert.equal(applyPatch({ ...base, proxy: 'http://p:1' }, { proxy: '' }).proxy, '', '空串清除');
+  assert.throws(() => applyPatch(base, { proxy: 'bad' }), /代理地址无效/);
+
+  const keys = ['LIT_SEARCH_PROXY', ...GENERIC_PROXY_ENV];
+  const prev = Object.fromEntries(keys.map((k) => [k, process.env[k]]));
+  try {
+    for (const k of keys) delete process.env[k];
+    assert.equal(resolveProxy(base), '');
+    process.env.HTTPS_PROXY = 'http://env-generic:1';
+    assert.equal(resolveProxy(base), 'http://env-generic:1');
+    process.env.LIT_SEARCH_PROXY = 'http://env-lit:1';
+    assert.equal(resolveProxy(base), 'http://env-lit:1');
+    assert.equal(resolveProxy({ ...base, proxy: 'http://file:1' }), 'http://file:1');
+    process.env.LIT_SEARCH_PROXY = 'garbage';
+    assert.equal(resolveProxy(base), '', '非法值按直连');
+  } finally {
+    for (const k of keys) {
+      if (prev[k] === undefined) delete process.env[k];
+      else process.env[k] = prev[k];
+    }
+  }
 });
 
 test('clampInt：非法值回落 fallback，越界夹紧', () => {
