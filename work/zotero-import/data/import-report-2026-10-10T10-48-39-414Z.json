@@ -1,0 +1,161 @@
+{
+  "dryRun": false,
+  "library": "WENJUN_MA's Group",
+  "libraryKey": "group:6441110",
+  "collection": "2.Novel Targets > liqiud crystal target",
+  "collectionKey": "YJUSYVEM",
+  "collectionSizeBefore": 32,
+  "counts": {
+    "created": 4,
+    "added": 1,
+    "exists": 11,
+    "skipped": 0,
+    "failed": 0
+  },
+  "items": [
+    {
+      "n": 1,
+      "doi": "10.1063/1.4885100",
+      "title": "Liquid crystal films as on-demand, variable thickness (50–5000 nm) targets for intense lasers",
+      "itemType": "journalArticle",
+      "action": "exists",
+      "itemKey": "",
+      "error": ""
+    },
+    {
+      "n": 3,
+      "doi": "10.1063/1.4964841",
+      "title": "Moderate repetition rate ultra-intense laser targets and optics using variable thickness liquid crystal films",
+      "itemType": "journalArticle",
+      "action": "exists",
+      "itemKey": "",
+      "error": ""
+    },
+    {
+      "n": 5,
+      "doi": "10.1063/1.4921554",
+      "title": "A confocal microscope position sensor for micron-scale target alignment in ultra-intense laser-matter experiments",
+      "itemType": "journalArticle",
+      "action": "exists",
+      "itemKey": "",
+      "error": ""
+    },
+    {
+      "n": 6,
+      "doi": "10.1088/1748-0221/12/04/c04023",
+      "title": "Liquid Crystal Targets and Plasma Mirrors For Laser Based Ion Acceleration",
+      "itemType": "journalArticle",
+      "action": "exists",
+      "itemKey": "",
+      "error": ""
+    },
+    {
+      "n": 7,
+      "doi": "10.1088/1367-2630/aa9d47",
+      "title": "Laser-driven ion acceleration via target normal sheath acceleration in the relativistic transparency regime",
+      "itemType": "journalArticle",
+      "action": "exists",
+      "itemKey": "",
+      "error": ""
+    },
+    {
+      "n": 8,
+      "doi": "10.1088/1361-6587/aab3bb",
+      "title": "On-shot characterization of single plasma mirror temporal contrast improvement",
+      "itemType": "journalArticle",
+      "action": "exists",
+      "itemKey": "",
+      "error": ""
+    },
+    {
+      "n": 9,
+      "doi": "10.1063/5.0219974",
+      "title": "Proton rings from late-forming ballistic sheath fields",
+      "itemType": "journalArticle",
+      "action": "exists",
+      "itemKey": "",
+      "error": ""
+    },
+    {
+      "n": 12,
+      "doi": "10.1038/srep32041",
+      "title": "Experiment and simulation of novel liquid crystal plasma mirrors for high contrast, intense laser pulses",
+      "itemType": "journalArticle",
+      "action": "exists",
+      "itemKey": "",
+      "error": ""
+    },
+    {
+      "n": 13,
+      "doi": "10.1063/1.5109683",
+      "title": "Modeling pulse-cleaning plasma mirrors from dielectric response to saturation: A particle-in-cell approach",
+      "itemType": "journalArticle",
+      "action": "exists",
+      "itemKey": "",
+      "error": ""
+    },
+    {
+      "n": 14,
+      "doi": "10.1103/physrevaccelbeams.24.121301",
+      "title": "Emittance preserving thin film plasma mirrors for GeV scale laser plasma accelerators",
+      "itemType": "journalArticle",
+      "action": "exists",
+      "itemKey": "",
+      "error": ""
+    },
+    {
+      "n": 15,
+      "doi": "10.1038/s41598-025-07016-3",
+      "title": "A renewable double plasma mirror for Petawatt-class lasers",
+      "itemType": "journalArticle",
+      "action": "exists",
+      "itemKey": "",
+      "error": ""
+    },
+    {
+      "n": 21,
+      "doi": "10.1038/s41598-019-52305-3",
+      "title": "Investigation of parameters governing damage resistance of nematic liquid crystals for high-power or peak-intensity laser applications",
+      "itemType": "journalArticle",
+      "action": "created",
+      "itemKey": "QZX8A2PX",
+      "error": ""
+    },
+    {
+      "n": 22,
+      "doi": "10.1364/ao.436236",
+      "title": "Femtosecond laser-induced damage threshold of nematic liquid crystals at 1030 nm",
+      "itemType": "journalArticle",
+      "action": "created",
+      "itemKey": "RY77HDNL",
+      "error": ""
+    },
+    {
+      "n": 23,
+      "doi": "10.1021/acsanm.0c02812",
+      "title": "Highly Saturated Glassy Liquid Crystal Films Having Nano- and Microscale Thicknesses for High-Power Laser Applications",
+      "itemType": "journalArticle",
+      "action": "created",
+      "itemKey": "UDCEYKHY",
+      "error": ""
+    },
+    {
+      "n": 24,
+      "doi": "10.1364/ol.487261",
+      "title": "Measurement of nonlinear refractive indices of bulk and liquid crystals by nonlinear chirped interferometry",
+      "itemType": "journalArticle",
+      "action": "created",
+      "itemKey": "YLCK7TDN",
+      "error": ""
+    },
+    {
+      "n": 25,
+      "doi": "10.3390/liquids6010007",
+      "title": "Design and Characterization of a Fully Automated Free-Standing Liquid Crystal Film Holder",
+      "itemType": "journalArticle",
+      "action": "added",
+      "itemKey": "FIT6MIJR",
+      "error": ""
+    }
+  ]
+}
