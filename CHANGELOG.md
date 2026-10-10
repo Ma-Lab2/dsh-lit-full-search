@@ -6,6 +6,24 @@ The format is based on Keep a Changelog and this project follows Semantic Versio
 
 ## [Unreleased]
 
+## [1.1.2] - 2026-10-11
+
+真机写入自检（建条目 → 读回核对 → 删除 → 验残留）抓到一个 v1.1.1 的回归并修复。
+
+### Fixed
+- **经代理请求不跟随重定向**（v1.1.1 引入的回归）：`proxyFetch` 用 `https.request` 直连隧道，不会自动跟随 301/302，
+  而 OA PDF 直链普遍是跳转（Frontiers 的 `/articles/…/pdf` 就 301 到实际文件）。结果：**开启代理后
+  `lit_to_zotero` 的 `attachPdf` 一律挂不上**，报「下载失败 HTTP 301 Moved Permanently」，实际只拿到 142 字节 HTML。
+  现跟随 301/302/303/307/308（最多 5 跳），并把 PDF 下载的超时预算从 15 s 提到 120 s（MB 级响应）。
+  真机自检 `work/stress/zotero-write-selftest.mjs` 复现并确认修复：修复前 `pdf=failed`，修复后 `pdf=attached`
+  且附件为 `application/pdf` / `imported_file`。
+
+### Added
+- `work/stress/zotero-write-selftest.mjs`：**真实写入**自检（建条目 → 逐条读回核对 → 删除 → 验证无残留），
+  只在个人库 + 脚本自建的 `__DSH-SELFTEST-*` 临时收藏夹里操作，`try/finally` 保证清理。
+  补齐了压力测试的空白：70 个用例全走 `dryRun`，非 dryRun 写路径此前只在 fetch 替身下验过契约。
+  另附 `work/stress/zotero-cleanup.mjs` 按 key 清理（DELETE 必须带 `If-Unmodified-Since-Version`，否则 428）。
+
 ## [1.1.1] - 2026-10-11
 
 压力测试发现两个工具在真实会话里**整体不可用**（模型只收到一条 Error），本版修复；同时补上让它们漏网的

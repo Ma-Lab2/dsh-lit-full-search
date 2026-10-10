@@ -6,15 +6,38 @@
 ## 怎么跑
 
 ```bash
-node work/stress/stress-live.mjs         # 70 个用例，打真实 OpenAlex / S2 / 本地 Zotero
-node work/stress/stress-concurrency.mjs  # 24 路并发 + render 幂等
+node work/stress/stress-live.mjs           # 70 个用例，打真实 OpenAlex / S2 / 本地 Zotero（只读 + dryRun）
+node work/stress/stress-concurrency.mjs    # 24 路并发 + render 幂等
+node work/stress/zotero-write-selftest.mjs # 真实写入自检：建条目 → 读回核对 → 删除 → 验残留
+node work/stress/zotero-cleanup.mjs <key>  # 按 key 清理（DELETE 需 If-Unmodified-Since-Version，否则 428）
 ```
 
 前置：Zotero 已开启本地 API（设置 → 高级 → 安全 → 允许其他应用程序通过本地 API 访问 Zotero）。
-`lit_to_zotero` 的用例**全部 `dryRun: true`**，不会写入真实库。
+`stress-live.mjs` 的 `lit_to_zotero` 用例**全部 `dryRun: true`**，不会写入真实库。
 
 每个用例都会跑 DSH 的三道硬校验（见 `test-support/contract.js`）：lossless JSON、`outputSchema` 封闭对象、
 `render` 形状；并打印渲染文本字符数与耗时。
+
+## 真实写入自检（zotero-write-selftest.mjs）
+
+`stress-live.mjs` 的 70 个用例全走 `dryRun`，所以「非 dryRun 的写路径」只在 fetch 替身下验过契约。
+本脚本补上真机端到端：用插件自己的 `importReferences` 真建条目（含 OA PDF 上传）→ 逐条读回核对
+（itemType / DOI / 作者数 / 收藏夹归属 / 附件）→ 删除 → 复查 404 与库内条目数还原。
+
+安全措施：只在**个人库**操作（不碰群组库）；目标是脚本自建的 `__DSH-SELFTEST-*` 收藏夹；
+全程 `try/finally`，失败也会清理并打印残留清单。
+
+2026-10-11 首次运行就抓到一个 v1.1.1 的回归：
+
+| 现象 | 根因 | 修法 |
+|---|---|---|
+| `pdf=failed 下载失败 HTTP 301` | v1.1.1 新增的 `proxyFetch` 用 `https.request` 直连隧道，**不跟随重定向**；而 OA PDF 直链普遍是 301（Frontiers 的 `/articles/…/pdf`） | `proxyFetch` 跟随 301/302/303/307/308（最多 5 跳）；PDF 下载超时 15 s → 120 s |
+
+修复后同一脚本：`pdf=attached`，附件为 `application/pdf` / `imported_file`（真上传文件，非链接），
+读回与清理全部通过，个人库条目数 160 → 160。`nextRedirectUrl` 已加单测防回归。
+
+注意：Zotero 的 DELETE 必须带 `If-Unmodified-Since-Version`（先 GET 拿 version），否则一律 428——
+自检脚本第一次就是漏了这个头，导致三个对象没删掉（已修复）。
 
 ## 结果
 
@@ -132,5 +155,8 @@ node work/stress/stress-concurrency.mjs  # 24 路并发 + render 幂等
 `maxChars` 的 0 / 上界 / 超上界 / 非数字；ref 四种写法；`fields` 投影含未知名；`include` 全部分组；
 `itemTypes` 白名单与排除；库/收藏夹不存在；200 条上限；年份倒挂；CJK；空白；超长 query；特殊字符。
 
-**未做真实写入验证**：`lit_to_zotero` 的非 dryRun 路径用替身做了契约校验（含 `attachPdf` 的 `none` 分支），
-但没有往真实库里真建条目再删。真实写入的端到端验证仍建议在专用收藏夹里手工跑一次。
+**未做真实写入验证**：~~`lit_to_zotero` 的非 dryRun 路径用替身做了契约校验（含 `attachPdf` 的 `none` 分支），
+但没有往真实库里真建条目再删。~~ **已补齐（2026-10-11）**：见上方「真实写入自检」——
+建条目 + 挂 PDF + 读回核对 + 删除 + 验残留全部通过，并因此发现并修掉了「经代理不跟随重定向」的回归。
+仍未覆盖：群组库的真实写入（自检只在个人库跑；群组路径与个人库仅 URL 前缀不同，
+且此前的液晶靶批量导入已在群组库真写过），以及 Zotero 的 412 版本冲突重试路径。

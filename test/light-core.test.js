@@ -18,6 +18,7 @@ import {
   zoteroFindByDoi,
   zoteroCreateItem,
   __setS2IntervalForTest,
+  nextRedirectUrl,
 } from '../lib/light-core.js';
 
 // 单测里关掉 S2 节流（默认 1.1s 间隔会拖慢套件）；节流行为由专门用例开回来测。
@@ -238,6 +239,21 @@ test('searchSemanticScholar：网络层失败后熔断，后续请求不再逐�
   await assert.rejects(() => searchSemanticScholar('b', { s2ApiKey: 'K' }), /网络不可达/);
   assert.equal(n, 2, '首次网络失败重试一次（代理→直连），之后熔断期间不再发请求');
   __setS2IntervalForTest(0); // 重置熔断，避免影响后续用例
+});
+
+test('nextRedirectUrl：跟随 301/302/303/307/308，其余不跟随（回归：代理曾完全不跟随重定向，OA PDF 全挂）', () => {
+  const base = 'https://www.frontiersin.org/articles/x/pdf';
+  for (const status of [301, 302, 303, 307, 308]) {
+    assert.equal(nextRedirectUrl(status, 'https://cdn.example/f.pdf', base), 'https://cdn.example/f.pdf', `status ${status} 应跟随`);
+  }
+  assert.equal(nextRedirectUrl(301, '/local/f.pdf', base), 'https://www.frontiersin.org/local/f.pdf', '相对 Location 按 base 解析');
+  for (const status of [200, 204, 400, 404, 500]) {
+    assert.equal(nextRedirectUrl(status, 'https://cdn.example/f.pdf', base), null, `status ${status} 不应跟随`);
+  }
+  assert.equal(nextRedirectUrl(301, null, base), null, '无 Location 不跟随');
+  assert.equal(nextRedirectUrl(301, '', base), null, '空 Location 不跟随');
+  assert.equal(nextRedirectUrl(301, 'https://x/y', base, 0), null, '跳数用尽不跟随');
+  assert.equal(nextRedirectUrl(301, '//cdn.example/f.pdf', base), 'https://cdn.example/f.pdf', '协议相对 Location 继承 base 协议');
 });
 
 test('proxyFetch：经 CONNECT 隧道发请求；代理不可达时给出明确错误', async () => {
