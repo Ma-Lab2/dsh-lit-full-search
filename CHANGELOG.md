@@ -6,6 +6,33 @@ The format is based on Keep a Changelog and this project follows Semantic Versio
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-10-10
+
+### Added
+- 新工具 `zotero_import`：批量把文献列表写回指定 Zotero 库/收藏夹，**支持群组库**。元数据链
+  Crossref → OpenAlex → 引用行内解析；目标库内按 DOI（无 DOI 按标题归一化）去重：已存在但不在收藏夹
+  → 加挂，否则新建；支持 `itemTypes` 白名单、`dryRun` 预演、`attachPdf` 可选挂 OA PDF；单条失败不中断并逐条汇报。
+- 新工具 `zotero_collections`：列出 Zotero 库与收藏夹（key / 名称 / 完整路径 / 条目数），
+  用于定位目标并把收藏夹名解析成 key（名称歧义时列出候选）。
+- `zotero_search` / `zotero_save` 新增可选 `library` 参数（`'user'` / `'group:<id>'` / 库名），可对群组库读写。
+- Zotero 本地 API 客户端：库路径参数化、收藏夹列表与加挂（乐观锁）、写请求 401 弹窗授权重试、OA PDF 四段上传。
+- 会话内工具结果卡片（`tool.call.toolview` 按 wire 工具名注册）：`zotero_import` 显示库/收藏夹、五类计数与
+  逐条动作徽标（含 PDF 状态），`zotero_collections` 显示库/收藏夹清单。
+
+### Fixed
+- 面板/环境里配置的 OpenAlex API Key 从未生效：`resolveAuth()` 返回 `openAlexApiKey`，而引擎读的是 `apiKey`，
+  导致 `lit_search` / `lit_abstract` / `lit_cited_by` / `zotero_save` 以及「服务诊断」的身份标识检查一直走匿名池；
+  现补 `apiKey` 别名并加回归用例。
+- 裸 DOI（如 `10.1063/1.4885100`）作为输入时，开头的 `10.` 被误当作列表序号剥掉，导致按错误标题检索到无关文献；
+  现要求序号后必须有空白，并加回归用例。
+
+### Changed
+- `lit_search` 的 `limit` 明确为**每个数据源**的上限：双源各取 `limit` 条后按 DOI 去重交叉合并，
+  合计最多 `2 × limit`，**不设合并总量上限**（原实现会把合并结果夹紧到 25）。
+- 开发命令改用 `node --test`（自动发现测试），修复 Node 24 + Windows 下 `node --test test/` 报
+  `Cannot find module ...\test` 的问题。
+- README 安装段按实况重写：profile bundle + `link:` 安装（桌面端 `core-020`），并说明 Host 代码需重启 DSH 才生效。
+
 ## [1.0.3] - 2026-10-10
 
 ### Changed
