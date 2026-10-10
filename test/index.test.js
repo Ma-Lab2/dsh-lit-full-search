@@ -94,7 +94,7 @@ test('客户端面板只用现行主题 token（--dsw-alias-*），不残留失�
   }
 });
 
-test('apply：注册 7 个全局工具 + 路由', () => {
+test('apply：注册 8 个全局工具 + 路由', () => {
   routeRegistry.clear();
   const registeredTools = [];
   const routes = [];
@@ -107,8 +107,8 @@ test('apply：注册 7 个全局工具 + 路由', () => {
     effect() {},
   };
   apply(ctx);
-  assert.equal(registeredTools.length, 7);
-  assert.deepEqual(registeredTools.map((t) => t.name), ['lit_search', 'lit_abstract', 'lit_cited_by', 'zotero_search', 'zotero_collections', 'lit_to_zotero', 'zotero_enrich']);
+  assert.equal(registeredTools.length, 8);
+  assert.deepEqual(registeredTools.map((t) => t.name), ['lit_search', 'lit_abstract', 'lit_cited_by', 'zotero_search', 'zotero_collections', 'lit_to_zotero', 'zotero_enrich', 'zotero_abstract']);
   assert.equal(routes.length, 2);
   assert.equal(routes[0].path, ROUTE);
   assert.equal(routes[1].path, DIAGNOSE_ROUTE);

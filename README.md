@@ -47,7 +47,8 @@ Host 端代码（`lib/*.js`：工具与路由）改动后**通常即时生效**�
 | `zotero_search` | 检索本地 Zotero 库（只读）；`library` 可指定群组库 | `query`(必填), `limit`, `qmode`, `library` |
 | `zotero_collections` | 列出 Zotero 库与收藏夹（key / 名称 / 完整路径 / 条目数），用于定位写回目标 | `library`, `query` |
 | `lit_to_zotero` | **批量**把检索到的文献写回指定库/收藏夹（支持群组库）：元数据解析 → 去重 → 新建/加挂（可选挂 OA PDF）→ 报告 | `refs`(必填), `library`, `collection`, `itemTypes`, `dryRun`, `attachPdf` |
-| `zotero_enrich` | **单点查**：按 item key / DOI / 标题读深**一个** Zotero 条目（含群组库）——书目字段、标签、收藏夹（名称+路径）、笔记、全部附件（可选磁盘路径与存在性）、批注、全文索引缓存 | `ref`(必填), `library`, `include`, `paths`, `maxChars` |
+| `zotero_enrich` | **单点查**：按 item key / DOI / 标题读深**一个** Zotero 条目（含群组库）——书目字段、标签、收藏夹（名称+路径）、笔记、全部附件（可选磁盘路径与存在性）、批注、全文索引缓存；`fields` 可只取指定字段 | `ref`(必填), `library`, `fields`, `include`, `paths`, `maxChars` |
+| `zotero_abstract` | 取**本地 Zotero** 里存的单篇摘要（abstractNote）；只要摘要时用它（与 `lit_abstract` 的外网摘要对称） | `ref`(必填), `library`, `maxChars` |
 
 > 结果统一带卡片渲染（`meta.card='literature'`）；`lit_to_zotero` / `zotero_collections` / `zotero_enrich`
 > 三个 Zotero 工具另有会话卡片（`tool.call.toolview` 按 wire 工具名注册，无 meta 时回落文本结果）。
@@ -99,10 +100,17 @@ lit_to_zotero({ refs: [...], library: "WENJUN_MA's Group", collection: "2.Novel 
 zotero_search({ query: "liqiud crystal", library: "WENJUN_MA's Group" })   → 拿到 key
 zotero_enrich({ ref: "QZX8A2PX", library: "WENJUN_MA's Group",
                 include: ["fields","tags","collections","notes","attachments"], paths: true })
+zotero_enrich({ ref: "QZX8A2PX", fields: ["abstractNote"] })              → 只要摘要（更短）
+zotero_abstract({ ref: "QZX8A2PX", library: "WENJUN_MA's Group" })        → 只要摘要的最短路径
 ```
 
 - `ref`：8 位 item key / DOI / 标题 / `zotero://user/0/item/<KEY>`（群组：`zotero://group/<id>/item/<KEY>`）。
-- `include` 缺省 `fields+tags+collections`；**只有点名 `notes`/`attachments`/`annotations`/`fulltext` 才会去读子对象**。
+- `fields`：**书目字段投影**（Zotero 原名：`abstractNote` / `creators` / `publicationTitle` / `volume` / `issue` / `pages` /
+  `DOI` / `url` / `date` / `extra` / `language` / `dateAdded` / `dateModified`）。给了就只回/只打印这些；
+  未知名回报在 `unknownFields`；省略 = 全部字段；`[]` = 只要标识字段。**给了 `fields` 时默认不再取 tags/collections**
+  （要就显式写 `include`）。
+- `include` 是**子对象组**：`tags` / `collections` / `notes` / `attachments` / `annotations` / `fulltext`，缺省 `tags+collections`；
+  **只有点名 `notes`/`attachments`/`annotations`/`fulltext` 才会去读子对象**。
 - `attachments` 返回该条目的**全部**附件（不只 PDF）；`paths: true` 才解析磁盘路径与存在性
   （走 `/items/<key>/file/view/url` → `file://` → 盘符还原 → `existsSync`；返回的路径属于跑 Zotero 的这台机器）。
 - `fulltext` 读 Zotero 全文索引缓存（`.zotero-ft-cache`），PDF 未下载也能读正文；未建索引则为空。

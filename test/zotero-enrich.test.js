@@ -10,6 +10,7 @@ import assert from 'node:assert/strict';
 
 import {
   enrichItem,
+  getAbstract,
   groupChildren,
   mapCollections,
   mapTags,
@@ -181,7 +182,66 @@ test('stripHtml / mapTags / mapCollections / groupChildren：纯函数', () => {
 
 // ---- 主流程 -----------------------------------------------------------------
 
-test('enrichItem：默认 include（fields/tags/collections）只打 3 个请求，不读子对象', async () => {
+test('enrichItem：fields 投影——只回被点名的字段，未知名回报在 unknownFields', async () => {
+  installFetch();
+  const only = await enrichItem({ ref: ITEM_KEY, fields: ['abstractNote'] });
+  assert.deepEqual(Object.keys(only.item).sort(), ['DOI', 'abstractNote', 'date', 'itemType', 'key', 'title', 'version'].sort());
+  assert.equal(only.item.abstractNote, ITEM.data.abstractNote);
+  assert.equal(only.item.publicationTitle, undefined, '未点名字段不得出现');
+  assert.equal(only.unknownFields, undefined);
+
+  // 空数组 = 只要标识字段
+  const identity = await enrichItem({ ref: ITEM_KEY, fields: [] });
+  assert.deepEqual(Object.keys(identity.item).sort(), ['DOI', 'date', 'itemType', 'key', 'title', 'version'].sort());
+
+  // 标识字段出现在 fields 里不算未知
+  const withIdentity = await enrichItem({ ref: ITEM_KEY, fields: ['DOI', 'title', 'volume'] });
+  assert.equal(withIdentity.unknownFields, undefined);
+  assert.equal(withIdentity.item.volume, '9');
+
+  // 未知名 → 回报，不抛错，也不影响已知字段
+  const unknown = await enrichItem({ ref: ITEM_KEY, fields: ['volume', 'notAField', 'notAField'] });
+  assert.deepEqual(unknown.unknownFields, ['notAField']);
+  assert.equal(unknown.item.volume, '9');
+
+  // 省略 fields = 全部书目字段（回归）
+  const all = await enrichItem({ ref: ITEM_KEY });
+  assert.equal(all.unknownFields, undefined);
+  assert.equal(all.item.publicationTitle, 'Scientific Reports');
+  assert.equal(all.item.extra, 'Citations (openalex): 12');
+  assert.equal(all.item.language, 'en');
+});
+
+test('getAbstract：只取本地摘要（窄结构），带截断与未命中', async () => {
+  installFetch();
+  const hit = await getAbstract(ITEM_KEY, { library: "WENJUN_MA's Group" });
+  assert.equal(hit.found, true);
+  assert.equal(hit.key, ITEM_KEY);
+  assert.equal(hit.title, ITEM.data.title);
+  assert.equal(hit.DOI, ITEM.data.DOI);
+  assert.equal(hit.abstractNote, ITEM.data.abstractNote);
+  assert.equal(hit.chars, ITEM.data.abstractNote.length);
+  assert.equal(hit.truncated, false);
+  assert.equal('item' in hit, false, '窄结构不带整条记录');
+
+  // 截断：用长摘要（fixture 摘要仅 74 字符，低于 maxChars 下限 200）
+  const longAbs = '乙'.repeat(500);
+  installFetch({
+    routes: [[/\/items\/QZX8A2PX$/, () => jsonResponse({ key: ITEM_KEY, version: 1, data: { ...ITEM.data, abstractNote: longAbs } })]],
+  });
+  const short = await getAbstract(ITEM_KEY, { maxChars: 200 });
+  assert.equal(short.abstractNote.length, 200);
+  assert.equal(short.truncated, true);
+  assert.equal(short.chars, 500);
+
+  // 未命中
+  installFetch({ routes: [[/\/items\/NOPE1234/, () => jsonResponse({}, { status: 404, statusText: 'Not Found' })]] });
+  const miss = await getAbstract('NOPE1234');
+  assert.equal(miss.found, false);
+  assert.match(miss.hint, /zotero_search/);
+});
+
+test('enrichItem：默认 include（tags/collections）只打 3 个请求，不读子对象', async () => {
   const calls = installFetch();
   const report = await enrichItem({ ref: ITEM_KEY, library: "WENJUN_MA's Group" });
 
@@ -217,7 +277,7 @@ test('enrichItem：DOI 与标题两种 ref 都能定位到条目', async () => {
 
 test('enrichItem：include notes/attachments 才读子对象；笔记去 HTML 标签', async () => {
   const calls = installFetch();
-  const report = await enrichItem({ ref: ITEM_KEY, include: ['fields', 'notes', 'attachments'] });
+  const report = await enrichItem({ ref: ITEM_KEY, include: ['notes', 'attachments'] });
 
   assert.equal(report.counts.notes, 1);
   assert.equal(report.counts.attachments, 2);
@@ -323,7 +383,7 @@ test('enrichItem：子对象读取失败只记 warning，主记录仍返回', as
   installFetch({
     routes: [[/\/items\/QZX8A2PX\/children/, () => jsonResponse({ error: 'boom' }, { status: 500, statusText: 'Server Error' })]],
   });
-  const report = await enrichItem({ ref: ITEM_KEY, include: ['fields', 'notes'] });
+  const report = await enrichItem({ ref: ITEM_KEY, include: ['notes'] });
   assert.equal(report.found, true);
   assert.equal(report.item.key, ITEM_KEY);
   assert.equal(report.counts.notes, 0);

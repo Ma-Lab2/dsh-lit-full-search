@@ -16,6 +16,8 @@ The format is based on Keep a Changelog and this project follows Semantic Versio
 - 新工具 `zotero_enrich`：**单点查**——按 item key / DOI / 标题 / `zotero://` 引用读深**一个**条目：
   书目字段、标签、所属收藏夹（含名称与路径）、笔记、该条目的**全部附件**（`paths: true` 时解析磁盘路径与存在性）、
   附件批注、Zotero 全文索引缓存。只读，不做库级枚举。
+- 新工具 `zotero_abstract`：取**本地 Zotero** 里存的单篇摘要（`abstractNote`）——"只要摘要"的最短路径
+  （`ref` + 可选 `library`/`maxChars`）；与 `lit_abstract`（外网 OpenAlex）对称，本地为空时描述会指向它。
 - 新工具 `zotero_collections`：列出 Zotero 库与收藏夹（key / 名称 / 完整路径 / 条目数），
   用于定位目标并把收藏夹名解析成 key（名称歧义时列出候选）。
 - `zotero_search` 新增可选 `library` 参数（`'user'` / `'group:<id>'` / 库名），可检索群组库。
@@ -39,6 +41,10 @@ The format is based on Keep a Changelog and this project follows Semantic Versio
   工具数 8 → 7。
 
 ### Changed
+- `zotero_enrich` 新增 **`fields` 书目字段投影**：给了就只回/只打印点名字段（未知名回报在 `unknownFields`），
+  省略=全部字段，`[]`=只要标识字段；**给了 `fields` 时默认不再取 tags/collections**（要就显式写 `include`）。
+  `include` 收敛为纯**子对象组**（`tags`/`collections`/`notes`/`attachments`/`annotations`/`fulltext`），
+  去掉与之重叠的 `'fields'` token。工具数 7 → 8，schema 合计 3909 → 4845 字符（+936）。
 - 重写 7 个工具描述：补「何时用」的场景触发词（文献调研/开题摸底/综述、审稿核对、写作/改稿、日常归档）与
   兄弟工具边界（`lit_search` 外网 vs `zotero_search` 本地 vs `zotero_enrich` 读深；`lit_abstract` vs 本地全文索引），
   并删掉可从报错学到的重复前提。**语言仍为中文**——已核实的实证不支持「改英文能提升被 LLM 使用概率」

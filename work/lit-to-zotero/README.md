@@ -11,7 +11,8 @@
 |---|---|---|
 | `zotero_collections` | 只读 | 列出库与收藏夹（key / 名称 / 完整路径 / 条目数），用于定位与消歧 |
 | `lit_to_zotero` | 写 | 批量把检索到的文献（DOI / 标题 / 整行）写入指定库 + 收藏夹：元数据解析 → 去重 → 新建或加挂（可选挂 OA PDF）→ 报告 |
-| `zotero_enrich` | 只读 | **单点查**：按 item key / DOI / 标题 / `zotero://` 引用读深一个条目——字段 / 标签 / 收藏夹（名称+路径）/ 笔记 / 全部附件（可选磁盘路径与存在性）/ 批注 / 全文索引缓存 |
+| `zotero_enrich` | 只读 | **单点查**：按 item key / DOI / 标题 / `zotero://` 引用读深一个条目——字段（可 `fields` 投影）/ 标签 / 收藏夹（名称+路径）/ 笔记 / 全部附件（可选磁盘路径与存在性）/ 批注 / 全文索引缓存 |
+| `zotero_abstract` | 只读 | 只取本地存的 `abstractNote`（"只要摘要"的最短路径；与 `lit_abstract` 外网对称） |
 
 三者都有会话内卡片（客户端 `tool.call.toolview` keyed 槽位，按 wire 工具名分发）。
 `lit_to_zotero` 与 `zotero_enrich` 构成「**落库** ↔ **读深**」的一对：前者外网→本地，后者本地→模型。
@@ -68,7 +69,8 @@ work/lit-to-zotero/
 - [x] 57 条参考文献解析与筛选结论落盘（keep 16 / drop 41）
 - [x] `lib/light-core.js` 库路径参数化 + 收藏夹读写 + 授权
 - [x] `lib/lit-to-zotero.js` 引擎（含可选挂 OA PDF）
-- [x] `lib/tools.js` 三个工具定义
+- [x] `lib/tools.js` 四个工具定义
+- [x] `zotero_enrich` 的 `fields` 字段投影 + `zotero_abstract` 窄工具（"只要摘要"最短路径）
 - [x] 客户端卡片（`tool.call.toolview` 按 wire 工具名注册）
 - [x] 修 OpenAlex key 未生效缺陷（`resolveAuth().apiKey`）＋ 回归用例
 - [x] dry-run 核对 → apply → verify

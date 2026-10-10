@@ -37,10 +37,10 @@ test.afterEach(() => {
   delete globalThis.fetch;
 });
 
-test('toolDefinitions：7 个全局工具，名字与规格一致', () => {
+test('toolDefinitions：8 个全局工具，名字与规格一致', () => {
   assert.deepEqual(
     toolDefinitions.map((d) => d.name),
-    ['lit_search', 'lit_abstract', 'lit_cited_by', 'zotero_search', 'zotero_collections', 'lit_to_zotero', 'zotero_enrich']
+    ['lit_search', 'lit_abstract', 'lit_cited_by', 'zotero_search', 'zotero_collections', 'lit_to_zotero', 'zotero_enrich', 'zotero_abstract']
   );
   for (const def of toolDefinitions) {
     assert.equal(typeof def.execute, 'function', `${def.name} execute`);
@@ -50,6 +50,48 @@ test('toolDefinitions：7 个全局工具，名字与规格一致', () => {
     assert.equal(def.outputSchema.type, 'object');
     assert.equal(def.outputSchema.additionalProperties, false, `${def.name} outputSchema.additionalProperties`);
   }
+});
+
+test('zotero_enrich 的 fields 投影与 zotero_abstract 的窄输出（render 冒烟）', () => {
+  const enrich = toolDefinitions.find((d) => d.name === 'zotero_enrich');
+  const abs = toolDefinitions.find((d) => d.name === 'zotero_abstract');
+  assert.ok(enrich && abs);
+  assert.equal(abs.parameters.ref.required, true);
+  assert.deepEqual(compileParams(abs.parameters).required, ['ref']);
+  assert.equal('fields' in abs.parameters, false, '窄工具不暴露字段投影');
+
+  // 投影：只要 abstractNote → render 只有标题行 + 摘要行
+  const item = {
+    key: 'K1',
+    itemType: 'journalArticle',
+    title: 'Paper A',
+    date: '2019',
+    DOI: '10.1/a',
+    abstractNote: 'Abstract body.',
+  };
+  const only = enrich.render({ ref: 'K1', fields: ['abstractNote'] }, { found: true, ref: 'K1', resolvedBy: 'key', library: 'L', libraryKey: 'user', item, counts: { notes: 0, attachments: 0, annotations: 0, fulltext: 0 } });
+  const text = only[0].text;
+  assert.match(text, /Paper A/);
+  assert.match(text, /Abstract body\./);
+  assert.ok(!text.includes('作者：'), '未请求 creators 不应出现作者行');
+  assert.ok(!text.includes('来源：'), '未请求 publicationTitle 不应出现来源行');
+  assert.ok(!text.includes('DOI:'), '未请求 DOI 不应出现 DOI 行');
+
+  // 省略 fields → 保持既有输出
+  const full = enrich.render({}, { found: true, ref: 'K1', resolvedBy: 'key', library: 'L', libraryKey: 'user', item: { ...item, creators: [{ firstName: 'A', lastName: 'B' }], publicationTitle: 'Sci Rep' }, counts: {} });
+  assert.match(full[0].text, /作者：A B/);
+  assert.match(full[0].text, /来源：Sci Rep · 2019/);
+  assert.match(full[0].text, /DOI: 10\.1\/a/);
+
+  // zotero_abstract：命中 / 本地无摘要 / 未命中
+  const hit = abs.render({}, { found: true, ref: 'K1', library: 'L', libraryKey: 'user', key: 'K1', title: 'Paper A', DOI: '10.1/a', abstractNote: 'Abstract body.', chars: 14, truncated: false });
+  assert.equal(hit[0].text.split('\n').length, 2, '命中时只有出处 + 摘要两行');
+  assert.match(hit[0].text, /Paper A（K1 · L · 10\.1\/a）/);
+  const empty = abs.render({}, { found: true, ref: 'K1', library: 'L', libraryKey: 'user', key: 'K1', title: 'Paper A', DOI: '', abstractNote: '', chars: 0, truncated: false });
+  assert.match(empty[0].text, /abstractNote 为空/);
+  assert.match(empty[0].text, /lit_abstract/);
+  const miss = abs.render({ ref: 'NOPE' }, { found: false, ref: 'NOPE', library: 'L', libraryKey: 'user', hint: 'hint' });
+  assert.match(miss[0].text, /未在「L」/);
 });
 
 test('新增工具：zotero_collections / lit_to_zotero 的参数 schema 与 render 冒烟', () => {

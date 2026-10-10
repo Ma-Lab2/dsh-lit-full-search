@@ -78,6 +78,18 @@
 | 单条元数据解析失败 | 记 `failed` 继续（不影响其余条目） |
 | 标题始终解析不出来 | 记 `failed`（`无法解析出标题`） |
 
+## `zotero_abstract`（窄工具，v1.1.0 新增）
+
+| 参数 | 必填 | 说明 |
+|---|---|---|
+| `ref` | ✔ | 条目引用（四种写法同 `zotero_enrich`：item key / DOI / 标题 / `zotero://`） |
+| `library` | | `'user'`（默认）/ `'group:<id>'` / 库名 |
+| `maxChars` | | 摘要截断（200–20000，默认 2000） |
+
+返回 `{ found, ref, resolvedBy, library, libraryKey, key, title, DOI, abstractNote, chars, truncated, hint? }`；
+render 命中时**只有两行**（`标题（key · 库 · DOI）` + 摘要正文）。实现上复用 `getAbstract()` → `enrichItem({ fields: ['abstractNote'] })`，
+不新增 Zotero 引擎代码；未命中不抛错。与 `lit_abstract`（外网 OpenAlex）对称，本地摘要为空时 render 会指向 `lit_abstract`。
+
 ## 边界与已知限制
 
 - **PDF 只走 OpenAlex 的 OA 直链**（不做 Unpaywall 兜底、不驱动浏览器过付费墙）；Crossref 不提供 PDF 链接。
@@ -95,7 +107,8 @@
 |---|---|---|
 | `ref` | ✔ | 8 位 item key / DOI / 标题 / `zotero://user/0/item/<KEY>`（群组 `zotero://group/<id>/item/<KEY>`，附件 ref 会转到父条目） |
 | `library` | | `'user'`（默认）/ `'group:<id>'` / 库名 |
-| `include` | | 子集 `fields`(默认) `tags`(默认) `collections`(默认) `notes` `attachments` `annotations` `fulltext`；**只有点名 notes/attachments/annotations/fulltext 才会读子对象** |
+| `include` | | 子集 `tags`(默认) `collections`(默认) `notes` `attachments` `annotations` `fulltext`；**只有点名 notes/attachments/annotations/fulltext 才会读子对象** |
+| `fields` | | **书目字段投影**（Zotero 原名）：`abstractNote`/`creators`/`year`/`date`/`publicationTitle`/`volume`/`issue`/`pages`/`DOI`/`url`/`extra`/`language`/`dateAdded`/`dateModified`。给了就只回只打印这些（未知名回报 `unknownFields`）；省略=全部；`[]`=只要标识字段。**给了 `fields` 时 `include` 默认空**（不再自动带 tags/collections） |
 | `paths` | | `true` 时解析每个附件的磁盘路径与存在性（每条附件一次 `/file/view/url`） |
 | `maxChars` | | 笔记/批注/全文/摘要单条截断，200–20000（默认 2000，越界夹紧、非整数回落默认） |
 

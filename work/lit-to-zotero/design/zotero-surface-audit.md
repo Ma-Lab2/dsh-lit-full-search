@@ -13,7 +13,8 @@
 | `zotero_search` | 本地读 | 库内关键词检索（`library` 支持群组库） |
 | `zotero_collections` | 本地读 | 库与收藏夹清单（key / 路径 / 条目数） |
 | `lit_to_zotero` | 外网 → 本地写 | **批量**写回：三级元数据链 + 去重（跳过/加挂/新建）+ `itemTypes` 白名单 + `dryRun` + 可选挂 OA PDF |
-| `zotero_enrich` | 本地读 | **单点查**深度记录：书目字段 / 标签 / 收藏夹（名称+路径）/ 笔记 / 全部附件（可选磁盘路径与存在性）/ 批注 / Zotero 全文索引缓存 |
+| `zotero_enrich` | 本地读 | **单点查**深度记录：书目字段（可 `fields` 投影）/ 标签 / 收藏夹（名称+路径）/ 笔记 / 全部附件（可选磁盘路径与存在性）/ 批注 / Zotero 全文索引缓存 |
+| `zotero_abstract` | 本地读 | 只取本地存的 `abstractNote`（"只要摘要"的最短路径，与 `lit_abstract` 外网对称） |
 
 ### 1.2 `dsh-zotero` 0.12.1（已安装，**禁用**）
 
@@ -65,8 +66,9 @@
 
 1. **`zotero_save` 与 `lit_to_zotero` 重叠** —— **已在 v1.1.0 执行移除**：后者是前者的严格超集（单条 DOI 也能写，
    且额外支持群组库、收藏夹名称/`父 > 子` 路径、`itemTypes` 白名单、`dryRun`、挂 OA PDF、批量与逐条报告）。
-   工具数 **8 → 7**（当前：`lit_search` / `lit_abstract` / `lit_cited_by` / `zotero_search` / `zotero_collections` /
-   `lit_to_zotero` / `zotero_enrich`）。
+   随后又按"窄需求走短路径"补了 `zotero_abstract`，工具数 7 → 8（当前：`lit_search` / `lit_abstract` / `lit_cited_by` /
+   `zotero_search` / `zotero_collections` / `lit_to_zotero` / `zotero_enrich` / `zotero_abstract`）；
+   同时给 `zotero_enrich` 加了 `fields` 投影，避免"只要摘要"却带回整条记录。
 2. **`zotero_search` 与 `zotero_enrich` 的分工已清晰**：前者薄（key/标题/作者/年/DOI/URL），后者深（一次一个条目）。
    两者不重叠，无需合并。
 3. **卡片与面板**：三个 Zotero 工具各有会话卡片；面板 CSS 已从失效的 `--ds-color-*` 换到现行 `--dsw-alias-*`。
