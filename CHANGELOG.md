@@ -39,6 +39,10 @@ The format is based on Keep a Changelog and this project follows Semantic Versio
   工具数 8 → 7。
 
 ### Changed
+- 重写 7 个工具描述：补「何时用」的场景触发词（文献调研/开题摸底/综述、审稿核对、写作/改稿、日常归档）与
+  兄弟工具边界（`lit_search` 外网 vs `zotero_search` 本地 vs `zotero_enrich` 读深；`lit_abstract` vs 本地全文索引），
+  并删掉可从报错学到的重复前提。**语言仍为中文**——已核实的实证不支持「改英文能提升被 LLM 使用概率」
+  （描述语言不影响 tool-calling 准确率，掉分来自 prompt 语言）。descriptions 771 → 1143 字符。
 - 工具改名：`zotero_import` → **`lit_to_zotero`**（wire 名用下划线：DSH 工具名须为标识符形状，连字符会破坏 PTC/typed-dict 派生）。
 - `lit_search` 的 `limit` 明确为**每个数据源**的上限：双源各取 `limit` 条后按 DOI 去重交叉合并，
   合计最多 `2 × limit`，**不设合并总量上限**（原实现会把合并结果夹紧到 25）。
