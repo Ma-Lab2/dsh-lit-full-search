@@ -1,0 +1,7 @@
+# Default owner for everything.
+* @wjma-phy
+
+VERSION @wjma-phy
+CHANGELOG.md @wjma-phy
+OWNERS.yaml @wjma-phy
+docs/HANDOVER.md @wjma-phy

@@ -1,0 +1,75 @@
+name: Governance Check
+
+on:
+  pull_request:
+    branches: ["main", "master"]
+
+jobs:
+  validate_pr_fields:
+    name: governance/validate-pr-fields
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Validate PR template fields
+        id: pr_fields
+        shell: bash
+        run: |
+          set -euo pipefail
+          body="$(jq -r '.pull_request.body // ""' "$GITHUB_EVENT_PATH")"
+
+          if ! grep -Eq 'Base-Version:\s*v[0-9]+\.[0-9]+\.[0-9]+' <<< "$body"; then
+            echo "Missing or invalid Base-Version in PR body"
+            exit 1
+          fi
+
+          if ! grep -Eq 'Change-Type:\s*(breaking|feature|fix|docs|chore|release)' <<< "$body"; then
+            echo "Missing or invalid Change-Type in PR body"
+            exit 1
+          fi
+
+          if ! grep -Eq 'Target-Version:\s*(v[0-9]+\.[0-9]+\.[0-9]+|N/A)' <<< "$body"; then
+            echo "Missing or invalid Target-Version in PR body"
+            exit 1
+          fi
+
+          if ! grep -Eq 'AI-Agent:\s*(codex|claude-code|cursor|copilot|other|none)\s*$' <<< "$body"; then
+            echo "Missing or invalid AI-Agent in PR body"
+            exit 1
+          fi
+
+          if ! grep -Eq 'AI-Assistance:\s*(none|low|medium|high)\s*$' <<< "$body"; then
+            echo "Missing or invalid AI-Assistance in PR body"
+            exit 1
+          fi
+
+          if ! grep -Eq 'Human-Review-Confirmed:\s*yes\s*$' <<< "$body"; then
+            echo "Human-Review-Confirmed must be yes"
+            exit 1
+          fi
+
+  validate_version:
+    name: governance/validate-version
+    runs-on: ubuntu-latest
+    needs: [validate_pr_fields]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Validate governance policy
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 .governance/validate-governance.py \
+            --mode ci \
+            --base-ref "${{ github.event.pull_request.base.sha }}" \
+            --head-ref "${{ github.event.pull_request.head.sha }}" \
+            --strict-placeholders true \
+            --required-skill-version 0.2.1

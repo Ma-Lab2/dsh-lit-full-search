@@ -1,0 +1,15 @@
+repos:
+  - repo: local
+    hooks:
+      - id: governance-validate-local
+        name: governance validate local
+        entry: python3 .governance/validate-governance.py --mode local --required-skill-version 0.2.1
+        language: system
+        pass_filenames: false
+        stages: [pre-commit, pre-push]
+
+      - id: governance-commit-trailer
+        name: governance commit trailer
+        entry: .governance/check-commit-trailer.sh
+        language: system
+        stages: [commit-msg]

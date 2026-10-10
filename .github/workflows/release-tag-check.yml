@@ -1,0 +1,27 @@
+name: Release Tag Check
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  validate_release_tag:
+    name: governance/validate-release-tag
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Validate tag matches VERSION
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 .governance/validate-governance.py \
+            --mode ci \
+            --expected-tag "${GITHUB_REF_NAME}" \
+            --strict-placeholders true \
+            --required-skill-version 0.2.1

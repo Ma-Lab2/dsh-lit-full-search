@@ -1,0 +1,12 @@
+project: dsh-lit-full-search
+maintainers:
+  - github: @wjma-phy
+    role: lead
+    backup_for: @wjma-phy
+  # TODO(handover): 第二位维护者待定（团队治理要求至少 2 名），确定后替换本行并更新 CODEOWNERS
+  - github: @wjma-phy
+    role: co-maintainer
+    backup_for: @wjma-phy
+handover:
+  required_min_maintainers: 2
+  graduation_notice_days: 30
