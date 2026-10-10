@@ -33,8 +33,9 @@ dsh plugin --profile core-020 add "<绝对路径>/dsh-lit-full-search-<VERSION>.
 
 ### 生效方式
 
-Host 端代码（`lib/*.js`：工具与路由）走 ESM 缓存，**改完必须重启 DSH**；客户端面板
-（`lib/client.js`）另需刷新页面。`/lit-full-search/api/*` 返回 404 通常就是「改了但没重启」。
+Host 端代码（`lib/*.js`：工具与路由）改动后**通常即时生效**（本机桌面端实测：改完当轮工具行为即变，
+疑似 dsh-tauri 的「运行中变更」监听在重载）；若工具表或路由没更新，**重启 DSH** 即可（Host 端有 ESM 缓存）。
+客户端面板（`lib/client.js`）另需刷新页面。`/lit-full-search/api/*` 返回 404 通常是「改了但没重载」。
 
 ## 工具（全局，任何模式下可见）
 
