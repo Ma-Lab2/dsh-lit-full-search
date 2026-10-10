@@ -1,5 +1,5 @@
 /**
- * zotero-import 引擎测试：全部本地（注入全局 fetch 替身），不触碰网络与真实 Zotero。
+ * lit-to-zotero 引擎测试：全部本地（注入全局 fetch 替身），不触碰网络与真实 Zotero。
  *
  * 覆盖：参考文献行解析、作者串解析、库/收藏夹名解析与歧义报错、元数据链、
  * itemType 白名单、去重三分支（exists/added/created）、写请求路径与载荷、上限与错误隔离。
@@ -18,7 +18,7 @@ import {
   resolveCollection,
   resolveLibraryKey,
   splitApaAuthors,
-} from '../lib/zotero-import.js';
+} from '../lib/lit-to-zotero.js';
 
 // ---- fetch 替身 -------------------------------------------------------------
 

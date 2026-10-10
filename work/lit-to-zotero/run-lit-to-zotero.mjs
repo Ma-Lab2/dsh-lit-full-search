@@ -1,20 +1,20 @@
 #!/usr/bin/env node
 /**
- * 用插件引擎（lib/zotero-import.js）把筛选后的《液晶靶激光离子加速综述》参考文献
+ * 用插件引擎（lib/lit-to-zotero.js）把筛选后的《液晶靶激光离子加速综述》参考文献
  * 写回 Zotero：WENJUN_MA's Group → 2.Novel Targets → liqiud crystal target。
  *
  * 用法：
- *   node work/zotero-import/run-import.mjs --dry-run            # 只出计划，不写
- *   node work/zotero-import/run-import.mjs --apply              # 预检 1 条 → 全量写入
- *   node work/zotero-import/run-import.mjs --verify             # 复核是否 16/16 命中
- *   node work/zotero-import/run-import.mjs --rollback <report>  # 删除本次新建条目
+ *   node work/lit-to-zotero/run-lit-to-zotero.mjs --dry-run            # 只出计划，不写
+ *   node work/lit-to-zotero/run-lit-to-zotero.mjs --apply              # 预检 1 条 → 全量写入
+ *   node work/lit-to-zotero/run-lit-to-zotero.mjs --verify             # 复核是否 16/16 命中
+ *   node work/lit-to-zotero/run-lit-to-zotero.mjs --rollback <report>  # 删除本次新建条目
  */
 import { readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { ZOTERO_API_BASE, zoteroLibraryPrefix } from '../../lib/light-core.js';
-import { importReferences } from '../../lib/zotero-import.js';
+import { importReferences } from '../../lib/lit-to-zotero.js';
 import { loadConfig, resolveAuth } from '../../lib/config.js';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));

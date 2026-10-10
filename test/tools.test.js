@@ -37,10 +37,10 @@ test.afterEach(() => {
   delete globalThis.fetch;
 });
 
-test('toolDefinitions：7 个全局工具，名字与规格一致', () => {
+test('toolDefinitions：8 个全局工具，名字与规格一致', () => {
   assert.deepEqual(
     toolDefinitions.map((d) => d.name),
-    ['lit_search', 'lit_abstract', 'lit_cited_by', 'zotero_search', 'zotero_save', 'zotero_collections', 'zotero_import']
+    ['lit_search', 'lit_abstract', 'lit_cited_by', 'zotero_search', 'zotero_save', 'zotero_collections', 'lit_to_zotero', 'zotero_enrich']
   );
   for (const def of toolDefinitions) {
     assert.equal(typeof def.execute, 'function', `${def.name} execute`);
@@ -52,11 +52,11 @@ test('toolDefinitions：7 个全局工具，名字与规格一致', () => {
   }
 });
 
-test('新增工具：zotero_collections / zotero_import 的参数 schema 与 render 冒烟', () => {
+test('新增工具：zotero_collections / lit_to_zotero 的参数 schema 与 render 冒烟', () => {
   const cols = toolDefinitions.find((d) => d.name === 'zotero_collections');
-  const imp = toolDefinitions.find((d) => d.name === 'zotero_import');
+  const imp = toolDefinitions.find((d) => d.name === 'lit_to_zotero');
   assert.ok(cols, 'zotero_collections 已注册');
-  assert.ok(imp, 'zotero_import 已注册');
+  assert.ok(imp, 'lit_to_zotero 已注册');
 
   assert.equal(imp.parameters.refs.type, 'array');
   assert.equal(imp.parameters.refs.required, true);

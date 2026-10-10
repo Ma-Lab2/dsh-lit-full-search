@@ -1,7 +1,7 @@
-# 工具契约：`zotero_collections` / `zotero_import`
+# 工具契约：`zotero_collections` / `lit_to_zotero`
 
 面向 model 的参数语义、返回结构、错误语义与边界。实现在 `lib/tools.js`（工具层）+
-`lib/zotero-import.js`（编排）+ `lib/light-core.js`（Zotero 本地 API）。
+`lib/lit-to-zotero.js`（编排）+ `lib/light-core.js`（Zotero 本地 API）。
 
 ## 共同概念
 
@@ -25,7 +25,7 @@
 用途：把「收藏夹名」变成 key，并在同名/近似名之间消歧。真实歧义示例：
 `liqiud crystal target`（WENJUN_MA's Group，错拼）与 `liquid crystal target for LIA`（LDIA library）。
 
-## `zotero_import`（写，批量）
+## `lit_to_zotero`（写，批量）
 
 | 参数 | 必填 | 说明 |
 |---|---|---|
@@ -70,7 +70,7 @@
 
 | 情况 | 行为 |
 |---|---|
-| `refs` 为空 / 超过 200 | 抛错（工具层包装成 `zotero_import 执行失败：…`） |
+| `refs` 为空 / 超过 200 | 抛错（工具层包装成 `lit_to_zotero 执行失败：…`） |
 | 库名/收藏夹名找不到或多义 | 抛错，错误信息里列出候选（`名称 (key)` / `路径 (key)`） |
 | 写请求 401 | 自动 `POST /local/authorize` 弹 Zotero 授权窗一次，用新 key 重试；仍失败则抛错 |
 | 写请求 403 | 抛错（未开通本地通信或该库无写权限），不改其它条目 |
@@ -88,3 +88,23 @@
 - 个人库与群组库是不同 library，「个人库已有」不会让群组库写入被跳过。
 - 群组库条目由 Zotero 自行同步到云端；本地 API 写入需 Zotero 10+。
 - 无 DOI 条目按**标题归一化**（仅字母数字 + 中日韩字符、小写）去重，标题改写会产生重复，属已知取舍。
+
+## `zotero_enrich`（单点查，v1.1.0 新增）
+
+| 参数 | 必填 | 说明 |
+|---|---|---|
+| `ref` | ✔ | 8 位 item key / DOI / 标题 / `zotero://user/0/item/<KEY>`（群组 `zotero://group/<id>/item/<KEY>`，附件 ref 会转到父条目） |
+| `library` | | `'user'`（默认）/ `'group:<id>'` / 库名 |
+| `include` | | 子集 `fields`(默认) `tags`(默认) `collections`(默认) `notes` `attachments` `annotations` `fulltext`；**只有点名 notes/attachments/annotations/fulltext 才会读子对象** |
+| `paths` | | `true` 时解析每个附件的磁盘路径与存在性（每条附件一次 `/file/view/url`） |
+| `maxChars` | | 笔记/批注/全文/摘要单条截断，200–20000（默认 2000，越界夹紧、非整数回落默认） |
+
+返回 `{ found, ref, resolvedBy, library, libraryKey, item, counts, warnings? }`；未命中为
+`{ found:false, ref, library, libraryKey, hint }`（不抛错）。基础标识字段（key/itemType/title/date/DOI）总是返回，
+`fields` 追加作者/年/期刊/卷期页/URL/摘要/extra/语言/dateAdded/dateModified。
+
+请求预算：默认 3 个 GET（groups + collections + item）；`+notes/attachments` 加 1 次 children；
+`+annotations` 每条附件 1 次；`+paths` 每条附件 1 次；`+fulltext` 每条附件 1 次。**不做库级枚举。**
+
+边界：只读；附件返回该条目**全部**子附件（不只 PDF）；`paths:true` 时未下载文件为 `path=null/exists=false`（真实状态）；
+`linked_url` 返回 URL；全文索引未建则为空；单个子对象失败只进 `warnings`；路径属于跑 Zotero 的这台机器。

@@ -46,10 +46,11 @@ Host 端代码（`lib/*.js`：工具与路由）走 ESM 缓存，**改完必须�
 | `zotero_search` | 检索本地 Zotero 库（只读）；`library` 可指定群组库 | `query`(必填), `limit`, `qmode`, `library` |
 | `zotero_save` | 归档到 Zotero（DOI 查重，幂等）；`library` 可指定群组库 | `doi` / `title`, `collectionKey`, `library` |
 | `zotero_collections` | 列出 Zotero 库与收藏夹（key / 名称 / 完整路径 / 条目数），用于定位写回目标 | `library`, `query` |
-| `zotero_import` | **批量**把文献列表写回指定库/收藏夹（支持群组库）：元数据解析 → 去重 → 新建/加挂（可选挂 OA PDF）→ 报告 | `refs`(必填), `library`, `collection`, `itemTypes`, `dryRun`, `attachPdf` |
+| `lit_to_zotero` | **批量**把检索到的文献写回指定库/收藏夹（支持群组库）：元数据解析 → 去重 → 新建/加挂（可选挂 OA PDF）→ 报告 | `refs`(必填), `library`, `collection`, `itemTypes`, `dryRun`, `attachPdf` |
+| `zotero_enrich` | **单点查**：按 item key / DOI / 标题读深**一个** Zotero 条目（含群组库）——书目字段、标签、收藏夹（名称+路径）、笔记、全部附件（可选磁盘路径与存在性）、批注、全文索引缓存 | `ref`(必填), `library`, `include`, `paths`, `maxChars` |
 
-> 结果统一带卡片渲染（`meta.card='literature'`），与 dsh-literature-search 0.3.0 的
-> 浏览器端文献卡片渲染器兼容。
+> 结果统一带卡片渲染（`meta.card='literature'`）；`lit_to_zotero` / `zotero_collections` / `zotero_enrich`
+> 三个 Zotero 工具另有会话卡片（`tool.call.toolview` 按 wire 工具名注册，无 meta 时回落文本结果）。
 
 > **`limit` 的语义**：`lit_search` 的 `limit` 是**每个数据源**的上限 —— 只配 OpenAlex 时返回
 > ≤ `limit` 条；配了 S2 密钥走双源时，两源各取 `limit` 条，按 DOI（无 DOI 按标题+年份）去重后
@@ -72,10 +73,10 @@ Zotero 本地 API（`http://localhost:23119/api`）与 Web API 路径同形：�
 ```text
 zotero_collections({ library: "WENJUN_MA's Group", query: "crystal" })
   → 2.Novel Targets > liqiud crystal target  [YJUSYVEM] · 31 条
-zotero_import({ refs: [...], library: "WENJUN_MA's Group", collection: "2.Novel Targets > liqiud crystal target", itemTypes: ["journalArticle"] })
+lit_to_zotero({ refs: [...], library: "WENJUN_MA's Group", collection: "2.Novel Targets > liqiud crystal target", itemTypes: ["journalArticle"] })
 ```
 
-写回语义（`zotero_import`）：
+写回语义（`lit_to_zotero`）：
 - 目标库内按 DOI（无 DOI 按标题归一化）去重：**已在目标收藏夹 → 跳过；在库但不在收藏夹 → 加挂；否则新建**。
 - 元数据链 Crossref → OpenAlex → 引用行内解析，逐级降级不中断；单条失败只记 `failed`。
 - `dryRun: true` 先看计划（`exists/added/created/skipped/failed` 计数）再实写。
@@ -84,11 +85,32 @@ zotero_import({ refs: [...], library: "WENJUN_MA's Group", collection: "2.Novel 
 - 写请求需 Zotero 10+；首次 401 会弹 Zotero 授权窗（点一次「允许 / 始终允许」后自动重试）。
 - 单次上限 200 条。
 
-> 会话里的工具结果由客户端 `tool.call.toolview` 槽位按 wire 工具名渲染：`zotero_import` 显示
+> 会话里的工具结果由客户端 `tool.call.toolview` 槽位按 wire 工具名渲染：`lit_to_zotero` 显示
 > 「库 › 收藏夹 + 五类计数 + 逐条动作徽标（含 PDF 状态）」，`zotero_collections` 显示库/收藏夹清单；
 > 结构化 meta 缺失时回落该工具自身的文本结果。
 
 > 注意：个人库条目与群组库条目是**不同 library**，「个人库里已有」不会让群组库写入被跳过。
+
+## 读深单条 Zotero 条目（`zotero_enrich`）
+
+`zotero_search` 只回薄摘要（key/标题/作者/年/DOI/URL）；要读**一个**条目的完整本地记录用 `zotero_enrich`：
+
+```text
+zotero_search({ query: "liqiud crystal", library: "WENJUN_MA's Group" })   → 拿到 key
+zotero_enrich({ ref: "QZX8A2PX", library: "WENJUN_MA's Group",
+                include: ["fields","tags","collections","notes","attachments"], paths: true })
+```
+
+- `ref`：8 位 item key / DOI / 标题 / `zotero://user/0/item/<KEY>`（群组：`zotero://group/<id>/item/<KEY>`）。
+- `include` 缺省 `fields+tags+collections`；**只有点名 `notes`/`attachments`/`annotations`/`fulltext` 才会去读子对象**。
+- `attachments` 返回该条目的**全部**附件（不只 PDF）；`paths: true` 才解析磁盘路径与存在性
+  （走 `/items/<key>/file/view/url` → `file://` → 盘符还原 → `existsSync`；返回的路径属于跑 Zotero 的这台机器）。
+- `fulltext` 读 Zotero 全文索引缓存（`.zotero-ft-cache`），PDF 未下载也能读正文；未建索引则为空。
+- 未命中返回 `found: false` 与提示（不抛错）；某个子对象读取失败只进 `warnings`。
+- Zotero「按需下载」未拉取文件时 `path=null, exists=false` —— 这是真实状态，不是错误。
+
+> 与 `dsh-zotero` 插件（本机已禁用）**互斥**：它也有一个同名 `zotero_search`，DSH 对同名工具硬报错；
+> 若要启用它，须先改名本插件的 `zotero_search`。详见 `work/lit-to-zotero/design/zotero-surface-audit.md`。
 
 ## 设置面板（「全面文献搜索设置」）
 
