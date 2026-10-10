@@ -13,6 +13,7 @@ import {
   groupChildren,
   mapCollections,
   mapTags,
+  normalizeAbstract,
   parseEnrichRef,
   stripHtml,
 } from '../lib/zotero-enrich.js';
@@ -143,6 +144,22 @@ test('parseEnrichRef：key / zotero:// / DOI / 标题 四种解析', () => {
     title: 'Liquid crystal films as on-demand targets',
   });
   assert.throws(() => parseEnrichRef('   '), /ref 不能为空/);
+});
+
+test('normalizeAbstract：折叠来源网页的换行/缩进，去掉开头的 Abstract 段标签', () => {
+  // 真实样本（Yogo 2017）：939 字符里 219 个是空白，上标被拆成 4 行
+  const raw = 'Abstract\n            \n              Using one of the world most powerful laser facility. By extending the pulse duration from 1.5 to 6 ps with fixed laser intensity of 10\n              18\n               W cm\n              −2\n              , the maximum proton energy is improved more than twice.';
+  const out = normalizeAbstract(raw);
+  assert.equal([...raw].length > [...out].length, true);
+  assert.equal(out.startsWith('Using one of the world'), true, '应去掉 Abstract 标签');
+  assert.equal(out.includes('\n'), false, '应折叠所有换行');
+  assert.equal(out.includes('  '), false, '不应留连续空格');
+  assert.equal(out, 'Using one of the world most powerful laser facility. By extending the pulse duration from 1.5 to 6 ps with fixed laser intensity of 10 18 W cm −2 , the maximum proton energy is improved more than twice.');
+  // 无标签 / 空值 / 中文标签
+  assert.equal(normalizeAbstract('Plain abstract text.'), 'Plain abstract text.');
+  assert.equal(normalizeAbstract(''), '');
+  assert.equal(normalizeAbstract(undefined), '');
+  assert.equal(normalizeAbstract('摘要：中文摘要内容。'), '中文摘要内容。');
 });
 
 test('stripHtml / mapTags / mapCollections / groupChildren：纯函数', () => {
