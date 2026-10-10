@@ -132,11 +132,15 @@ test('resolveAuth：配置文件 > 环境变量 > 空串', () => {
     let auth = resolveAuth({ mailto: 'file@x.y', openAlexApiKey: 'FILE-KEY', s2ApiKey: 'FILE-S2', zoteroKey: '' });
     assert.equal(auth.mailto, 'file@x.y');
     assert.equal(auth.openAlexApiKey, 'FILE-KEY');
+    // 回归：light-core 的 OpenAlex 选项名是 apiKey，必须与 openAlexApiKey 同值，
+    // 否则面板里设的 key 永远进不了请求（一直走匿名池）。
+    assert.equal(auth.apiKey, 'FILE-KEY');
     assert.equal(auth.s2ApiKey, 'FILE-S2');
     // 文件空 → env
     auth = resolveAuth({ mailto: '', openAlexApiKey: '', s2ApiKey: '', zoteroKey: '' });
     assert.equal(auth.mailto, 'env@x.y');
     assert.equal(auth.openAlexApiKey, 'ENV-KEY');
+    assert.equal(auth.apiKey, 'ENV-KEY');
     assert.equal(auth.s2ApiKey, 'ENV-S2');
     // 全空 → ''
     auth = resolveAuth({ mailto: '', openAlexApiKey: '', s2ApiKey: '', zoteroKey: '' });

@@ -193,13 +193,17 @@ test('searchSemanticScholar：URL 组装（query/limit/fields/year）+ x-api-key
   assert.equal(calls2[0].init.headers['x-api-key'], undefined);
 });
 
-test('zoteroSearch：本地 API 查询 + 映射 + 空标题过滤', async () => {
+test('zoteroSearch：本地 API 查询 + 映射 + 过滤附件/笔记/空壳', async () => {
   const calls = stubFetch([
     {
       key: 'K1',
       data: { itemType: 'journalArticle', title: 'Paper A', creators: [{ firstName: 'Alice', lastName: 'Smith' }], date: '2020-05-01', DOI: 'https://doi.org/10.1/a', url: 'https://x.a' },
     },
     { key: 'K2', data: { itemType: 'attachment', title: '', creators: [], date: '' } }, // 附件子条目，应被过滤
+    // 回归：Zotero 里把 PDF 拖进来会变成 title='PDF' 的顶层附件，按论文标题检索会命中它（全文索引匹配）
+    { key: 'K3', data: { itemType: 'attachment', title: 'PDF', creators: [], date: '' } },
+    { key: 'K4', data: { itemType: 'note', title: 'AI4Paper 精读', creators: [], date: '' } },
+    { key: 'K5', data: { itemType: 'journalArticle', title: '', creators: [], date: '' } }, // 无标题无 DOI 的空壳
   ]);
   const items = await zoteroSearch('paper');
   const url = new URL(calls[0].url);
@@ -207,8 +211,8 @@ test('zoteroSearch：本地 API 查询 + 映射 + 空标题过滤', async () => 
   assert.equal(url.searchParams.get('q'), 'paper');
   assert.equal(url.searchParams.get('qmode'), 'everything');
   assert.equal(url.searchParams.get('limit'), '20');
-  assert.equal(items.length, 1);
-  assert.equal(items[0].key, 'K1');
+  assert.equal(url.searchParams.get('itemType'), '-attachment || -note || -annotation');
+  assert.deepEqual(items.map((i) => i.key), ['K1'], '只应返回顶层文献条目');
   assert.equal(items[0].authors[0], 'Alice Smith');
   assert.equal(items[0].year, '2020');
   assert.equal(items[0].doi, '10.1/a');

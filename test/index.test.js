@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import os from 'node:os';
 import path from 'node:path';
 import { Readable } from 'node:stream';
-import { mkdtempSync, rmSync, existsSync } from 'node:fs';
+import { mkdtempSync, rmSync, existsSync, readFileSync } from 'node:fs';
 
 import { name, inject, apply, ROUTE, DIAGNOSE_ROUTE, routeRegistry } from '../lib/index.js';
 
@@ -83,7 +83,18 @@ test('apply：缺 tools/webServer 时安全降级', () => {
   }
 });
 
-test('apply：注册 5 个全局工具 + 路由', () => {
+test('客户端面板只用现行主题 token（--dsw-alias-*），不残留失效的 --ds-color-*', () => {
+  const css = readFileSync(new URL('../lib/client.js', import.meta.url), 'utf8');
+  const stale = css.match(/--ds-color-[a-z-]+/g) ?? [];
+  assert.deepEqual(stale, [], `面板 CSS 残留失效 token：${[...new Set(stale)].join(', ')}`);
+  const tokens = new Set(css.match(/--dsw-alias-[a-z0-9-]+/g) ?? []);
+  assert.ok(tokens.size >= 8, `面板应使用现行主题 token，实际用到 ${tokens.size} 个`);
+  for (const required of ['--dsw-alias-label-primary', '--dsw-alias-label-secondary', '--dsw-alias-border-l1', '--dsw-alias-bg-layer-1']) {
+    assert.ok(tokens.has(required), `面板缺少 ${required}`);
+  }
+});
+
+test('apply：注册 8 个全局工具 + 路由', () => {
   routeRegistry.clear();
   const registeredTools = [];
   const routes = [];
@@ -96,8 +107,8 @@ test('apply：注册 5 个全局工具 + 路由', () => {
     effect() {},
   };
   apply(ctx);
-  assert.equal(registeredTools.length, 5);
-  assert.deepEqual(registeredTools.map((t) => t.name), ['lit_search', 'lit_abstract', 'lit_cited_by', 'zotero_search', 'zotero_save']);
+  assert.equal(registeredTools.length, 8);
+  assert.deepEqual(registeredTools.map((t) => t.name), ['lit_search', 'lit_abstract', 'lit_cited_by', 'zotero_search', 'zotero_collections', 'lit_to_zotero', 'zotero_enrich', 'zotero_abstract']);
   assert.equal(routes.length, 2);
   assert.equal(routes[0].path, ROUTE);
   assert.equal(routes[1].path, DIAGNOSE_ROUTE);
