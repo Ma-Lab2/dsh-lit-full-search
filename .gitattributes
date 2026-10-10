@@ -1,0 +1,8 @@
+# 统一换行：治理锁（.governance/skill.lock.json 的 template_sha256）按**字节**校验哈希，
+# 因此工作区换行必须跨平台一致，否则 Windows 检出（CRLF）与 Linux CI（LF）必然不匹配。
+# 详见 .governance/update-skill-lock.py 的 newline="\n" 与本次修复的提交说明。
+* text=auto
+.governance/manifest.sha256 text eol=lf
+.governance/skill.lock.json text eol=lf
+.governance/*.py text eol=lf
+*.sh text eol=lf
