@@ -37,10 +37,10 @@ test.afterEach(() => {
   delete globalThis.fetch;
 });
 
-test('toolDefinitions：8 个全局工具，名字与规格一致', () => {
+test('toolDefinitions：7 个全局工具，名字与规格一致', () => {
   assert.deepEqual(
     toolDefinitions.map((d) => d.name),
-    ['lit_search', 'lit_abstract', 'lit_cited_by', 'zotero_search', 'zotero_save', 'zotero_collections', 'lit_to_zotero', 'zotero_enrich']
+    ['lit_search', 'lit_abstract', 'lit_cited_by', 'zotero_search', 'zotero_collections', 'lit_to_zotero', 'zotero_enrich']
   );
   for (const def of toolDefinitions) {
     assert.equal(typeof def.execute, 'function', `${def.name} execute`);
@@ -105,8 +105,8 @@ test('wrapToolError：带工具名与 cause 的 Error（必须 throw 而非 isEr
   const err = wrapToolError('lit_search', new Error('boom'));
   assert.equal(err.message, 'lit_search 执行失败：boom');
   assert.equal(err.cause.message, 'boom');
-  const str = wrapToolError('zotero_save', 'naked-string');
-  assert.equal(str.message, 'zotero_save 执行失败：naked-string');
+  const str = wrapToolError('lit_to_zotero', 'naked-string');
+  assert.equal(str.message, 'lit_to_zotero 执行失败：naked-string');
 });
 
 test('lit_search：无参数时用预算默认，limit 被预算夹紧', async () => {
@@ -338,45 +338,8 @@ test('zotero_search：limit 夹紧到预算', async () => {
   assert.deepEqual(res, { items: [] });
 });
 
-test('zotero_save：查重命中 exists / 未命中 created / 无法解析抛错', async () => {
-  const def = toolDefinitions.find((d) => d.name === 'zotero_save');
-
-  // 已存在 → exists（幂等，不再建条目）
-  let seq = 0;
-  stubFetch(() => {
-    seq += 1;
-    // 第 1 次调用 = lookupOpenAlexByDoi（work）
-    // 第 2 次调用 = zoteroFindByDoi（命中 K1）
-    if (seq === 1) return mapOpenAlexWorkShim({ title: 'Paper', abstract: 'a b c', doi: '10.1/paper' });
-    return [
-      { key: 'K1', data: { itemType: 'journalArticle', title: 'Paper', creators: [], date: '', DOI: '10.1/paper', url: '' } },
-    ];
-  });
-  const exists = await def.execute({ doi: '10.1/paper' });
-  assert.equal(exists.outcome, 'exists');
-  assert.equal(exists.itemKey, 'K1');
-  assert.equal(seq, 2); // 没有第 3 次（未建条目）
-
-  // 未命中 → created
-  seq = 0;
-  stubFetch(() => {
-    seq += 1;
-    if (seq === 1) return mapOpenAlexWorkShim({ title: 'New Paper', abstract: 'x y z', doi: '10.1/new' });
-    if (seq === 2) return []; // zoteroFindByDoi 未命中
-    return { successful: { '0': { key: 'NEWK1' } } }; // zoteroCreateItem 成功
-  });
-  const created = await def.execute({ doi: '10.1/new' });
-  assert.equal(created.outcome, 'created');
-  assert.equal(created.itemKey, 'NEWK1');
-});
-
-test('zotero_save render：按 outcome 给出中文状态', () => {
-  const def = toolDefinitions.find((d) => d.name === 'zotero_save');
-  const blocks = def.render({}, { outcome: 'created', itemKey: 'A1', title: 'T', doi: 'd' });
-  assert.match(blocks[0].text, /已创建/);
-  const blocks2 = def.render({}, { outcome: 'exists', itemKey: 'A2', title: 'T2' });
-  assert.match(blocks2[0].text, /已存在/);
-  // render 空值不崩（outcome 缺省 → 回落「完成」）
-  const blocks3 = def.render({}, {});
-  assert.match(blocks3[0].text, /完成/);
+test('zotero_search render：库/条目列表不崩', () => {
+  const def = toolDefinitions.find((d) => d.name === 'zotero_search');
+  const blocks = def.render({ query: 'x' }, { items: [] });
+  assert.match(blocks[0].text, /未找到/);
 });

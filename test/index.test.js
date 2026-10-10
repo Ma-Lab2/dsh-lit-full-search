@@ -107,8 +107,8 @@ test('apply：注册 7 个全局工具 + 路由', () => {
     effect() {},
   };
   apply(ctx);
-  assert.equal(registeredTools.length, 8);
-  assert.deepEqual(registeredTools.map((t) => t.name), ['lit_search', 'lit_abstract', 'lit_cited_by', 'zotero_search', 'zotero_save', 'zotero_collections', 'lit_to_zotero', 'zotero_enrich']);
+  assert.equal(registeredTools.length, 7);
+  assert.deepEqual(registeredTools.map((t) => t.name), ['lit_search', 'lit_abstract', 'lit_cited_by', 'zotero_search', 'zotero_collections', 'lit_to_zotero', 'zotero_enrich']);
   assert.equal(routes.length, 2);
   assert.equal(routes[0].path, ROUTE);
   assert.equal(routes[1].path, DIAGNOSE_ROUTE);

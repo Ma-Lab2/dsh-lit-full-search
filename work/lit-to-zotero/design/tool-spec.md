@@ -81,7 +81,7 @@
 ## 边界与已知限制
 
 - **PDF 只走 OpenAlex 的 OA 直链**（不做 Unpaywall 兜底、不驱动浏览器过付费墙）；Crossref 不提供 PDF 链接。
-- **不写 note/tag**（`zotero_save` 的 PDF 能力不在本工具内）。
+- **不写 note/tag**。
 - 客户端卡片在 `tool.call.toolview` 里按 **wire 工具名**注册；若某个 session 记录里的 meta 缺失或格式不识别，
   自动回落工具自身的文本结果。
 - 大库性能：去重 = 目标收藏夹整表一次 + 未命中条目逐条 `qmode=everything` 检索；库越大越慢，但仍只读。

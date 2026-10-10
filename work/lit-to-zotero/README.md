@@ -18,6 +18,7 @@
 
 背景缺口：插件原有的 `zotero_search` / `zotero_save` 全部硬编码 `/users/0/items`（个人库），
 **完全不支持群组库**，也没有收藏夹定位与「读深单条」的能力。
+（`zotero_save` 已在 v1.1.0 移除——它被 `lit_to_zotero` 完全覆盖。）
 
 > 完整的 Zotero 工具面审计（与已禁用的 `dsh-zotero` 的对比、完备性缺口、轻量化结论、技能面补丁草案）
 > 见 [`design/zotero-surface-audit.md`](design/zotero-surface-audit.md)。

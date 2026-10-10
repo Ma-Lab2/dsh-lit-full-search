@@ -12,7 +12,6 @@
 | `lit_search` / `lit_abstract` / `lit_cited_by` | 外网 → 模型 | OpenAlex（+S2 双源）/ 摘要 / 被引 |
 | `zotero_search` | 本地读 | 库内关键词检索（`library` 支持群组库） |
 | `zotero_collections` | 本地读 | 库与收藏夹清单（key / 路径 / 条目数） |
-| `zotero_save` | 外网 → 本地写 | 单条 DOI/标题 → 建条目（DOI 查重） |
 | `lit_to_zotero` | 外网 → 本地写 | **批量**写回：三级元数据链 + 去重（跳过/加挂/新建）+ `itemTypes` 白名单 + `dryRun` + 可选挂 OA PDF |
 | `zotero_enrich` | 本地读 | **单点查**深度记录：书目字段 / 标签 / 收藏夹（名称+路径）/ 笔记 / 全部附件（可选磁盘路径与存在性）/ 批注 / Zotero 全文索引缓存 |
 
@@ -64,9 +63,10 @@
 
 ## 4. 轻量化结论
 
-1. **`zotero_save` 与 `lit_to_zotero` 重叠**：后者是前者的严格超集——单条 DOI 也能写，且额外支持
-   群组库、收藏夹路径、`itemTypes` 白名单、`dryRun`、挂 OA PDF、批量与逐条报告。
-   → **下一轮轻量化的首选删除项**（本轮保留，减少回归面）。删除后工具数 8 → 7。
+1. **`zotero_save` 与 `lit_to_zotero` 重叠** —— **已在 v1.1.0 执行移除**：后者是前者的严格超集（单条 DOI 也能写，
+   且额外支持群组库、收藏夹名称/`父 > 子` 路径、`itemTypes` 白名单、`dryRun`、挂 OA PDF、批量与逐条报告）。
+   工具数 **8 → 7**（当前：`lit_search` / `lit_abstract` / `lit_cited_by` / `zotero_search` / `zotero_collections` /
+   `lit_to_zotero` / `zotero_enrich`）。
 2. **`zotero_search` 与 `zotero_enrich` 的分工已清晰**：前者薄（key/标题/作者/年/DOI/URL），后者深（一次一个条目）。
    两者不重叠，无需合并。
 3. **卡片与面板**：三个 Zotero 工具各有会话卡片；面板 CSS 已从失效的 `--ds-color-*` 换到现行 `--dsw-alias-*`。
@@ -82,7 +82,7 @@
 | 行 | 现状 | 建议 |
 |---|---|---|
 | L136 | 「**Zotero 7 本地 HTTP API（localhost:23119）只读**——写操作返回 501」 | 改为：「Zotero **10+** 本地 API 支持写入（写请求需 `Zotero-Server-ID` 头，缺失会 428；首次写入会在 Zotero 弹窗请求授权）；Zotero 7 只读」 |
-| L137 | 「批量写入首选 pyzotero Web 模式（需 userID + API key）」 | 补充本机可行路径：「本地 DSH 环境下可直接用 `lit_to_zotero`（批量、支持群组库与收藏夹）或 `zotero_save`；pyzotero 仍适用于脱离 DSH 的脚本」 |
+| L137 | 「批量写入首选 pyzotero Web 模式（需 userID + API key）」 | 补充本机可行路径：「本地 DSH 环境下可直接用 `lit_to_zotero`（批量/单条、支持群组库与收藏夹）；pyzotero 仍适用于脱离 DSH 的脚本」 |
 | L55 | 「Zotero 本地库 (**zotero-mcp**)」 | 本机未安装 zotero-mcp；改为「Zotero 本地 API / `zotero_search` + `zotero_enrich`」 |
 | L192–193 | 推荐 `pyzotero[cli]` / `zotero-cli` / `zotero-mcp` | 同上，补一句本机首选工具名 |
 | L38 | 「或传入 Zotero item key」 | 可补：「用 `zotero_search` 拿 key，`zotero_enrich` 读完整记录（含标签/收藏夹/附件路径）」 |

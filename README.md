@@ -44,7 +44,6 @@ Host 端代码（`lib/*.js`：工具与路由）走 ESM 缓存，**改完必须�
 | `lit_abstract` | 按 DOI 或标题取摘要（OpenAlex） | `doi` / `title` 至少其一 |
 | `lit_cited_by` | 被引列表（DOI 或 OpenAlex work ID） | `identifier`(必填), `limit` |
 | `zotero_search` | 检索本地 Zotero 库（只读）；`library` 可指定群组库 | `query`(必填), `limit`, `qmode`, `library` |
-| `zotero_save` | 归档到 Zotero（DOI 查重，幂等）；`library` 可指定群组库 | `doi` / `title`, `collectionKey`, `library` |
 | `zotero_collections` | 列出 Zotero 库与收藏夹（key / 名称 / 完整路径 / 条目数），用于定位写回目标 | `library`, `query` |
 | `lit_to_zotero` | **批量**把检索到的文献写回指定库/收藏夹（支持群组库）：元数据解析 → 去重 → 新建/加挂（可选挂 OA PDF）→ 报告 | `refs`(必填), `library`, `collection`, `itemTypes`, `dryRun`, `attachPdf` |
 | `zotero_enrich` | **单点查**：按 item key / DOI / 标题读深**一个** Zotero 条目（含群组库）——书目字段、标签、收藏夹（名称+路径）、笔记、全部附件（可选磁盘路径与存在性）、批注、全文索引缓存 | `ref`(必填), `library`, `include`, `paths`, `maxChars` |
@@ -121,7 +120,7 @@ id `lit-full-search-settings`），分四段：
 - **密钥** —— 每项带「已设置 …尾4位 / 未设置」状态徽标：
   - `openAlexApiKey`（兜底 `LIT_SEARCH_OPENALEX_API_KEY`）
   - `s2ApiKey` —— 设置后 `lit_search` 双源检索（兜底 `LIT_SEARCH_S2_API_KEY`）
-  - `zoteroKey` —— `zotero_save` 写操作需要（兜底 `LIT_SEARCH_ZOTERO_KEY`）
+  - `zoteroKey` —— `lit_to_zotero` 写回需要（兜底 `LIT_SEARCH_ZOTERO_KEY`）
 
   输入框**留空即保持不变**，输入新值才覆盖；要删除密钥点「清除」（可撤销），保存后生效。
   GET 回显只含掩码与布尔状态，不下发明文。

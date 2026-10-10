@@ -51,8 +51,10 @@
 
 ## `lib/tools.js`
 
-- 新增 `zotero_collections`、`lit_to_zotero` 两个工具定义（schema/execute/render/presentationMeta）。
-- `zotero_search` / `zotero_save` 新增可选 `library` 参数（缺省不变），让个人库之外的单条写入也能用。
+- 新增 `zotero_collections`、`lit_to_zotero`、`zotero_enrich` 三个工具定义（schema/execute/render/presentationMeta）。
+- `zotero_search` 新增可选 `library` 参数（缺省不变）。
+- **移除 `zotero_save`**：能力被 `lit_to_zotero` 完全覆盖（单条 DOI 亦可写，且支持收藏夹名称/`父 > 子` 路径、
+  Crossref 类型映射、`dryRun`、挂 OA PDF、逐条报告）→ 工具数 8 → 7。
 - `lit_to_zotero` 的 `presentationMeta` 输出 `counts + items[]`（含 `pdf`），供客户端卡片消费。
 
 ## `lib/client.js`
@@ -64,7 +66,7 @@
 ## `lib/config.js`
 
 - `resolveAuth()` 补 `apiKey` 别名（与 `openAlexApiKey` 同值）：light-core 的 OpenAlex 选项名是 `apiKey`，
-  此前面板里设的 key 永远进不了请求 URL（`lit_search` / `lit_abstract` / `lit_cited_by` / `zotero_save` / 诊断全受影响）。
+  此前面板里设的 key 永远进不了请求 URL（`lit_search` / `lit_abstract` / `lit_cited_by` / `lit_to_zotero` / 诊断全受影响）。
 
 ## `lib/index.js`
 

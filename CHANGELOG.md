@@ -18,7 +18,7 @@ The format is based on Keep a Changelog and this project follows Semantic Versio
   附件批注、Zotero 全文索引缓存。只读，不做库级枚举。
 - 新工具 `zotero_collections`：列出 Zotero 库与收藏夹（key / 名称 / 完整路径 / 条目数），
   用于定位目标并把收藏夹名解析成 key（名称歧义时列出候选）。
-- `zotero_search` / `zotero_save` 新增可选 `library` 参数（`'user'` / `'group:<id>'` / 库名），可对群组库读写。
+- `zotero_search` 新增可选 `library` 参数（`'user'` / `'group:<id>'` / 库名），可检索群组库。
 - Zotero 本地 API 客户端：库路径参数化、收藏夹列表与加挂（乐观锁）、写请求 401 弹窗授权重试、OA PDF 四段上传、
   单条目/子对象读取、附件磁盘路径解析（`/file/view/url` + 盘符还原 + 存在性）、全文索引缓存读取。
 - 会话内工具结果卡片（`tool.call.toolview` 按 wire 工具名注册）：`lit_to_zotero` 显示库/收藏夹、五类计数与
@@ -26,12 +26,17 @@ The format is based on Keep a Changelog and this project follows Semantic Versio
 
 ### Fixed
 - 面板/环境里配置的 OpenAlex API Key 从未生效：`resolveAuth()` 返回 `openAlexApiKey`，而引擎读的是 `apiKey`，
-  导致 `lit_search` / `lit_abstract` / `lit_cited_by` / `zotero_save` 以及「服务诊断」的身份标识检查一直走匿名池；
+  导致 `lit_search` / `lit_abstract` / `lit_cited_by` / `lit_to_zotero` 以及「服务诊断」的身份标识检查一直走匿名池；
   现补 `apiKey` 别名并加回归用例。
 - 裸 DOI（如 `10.1063/1.4885100`）作为输入时，开头的 `10.` 被误当作列表序号剥掉，导致按错误标题检索到无关文献；
   现要求序号后必须有空白，并加回归用例。
 - 面板 CSS 使用了已不存在的 `--ds-color-*` token（一直靠硬编码兜底色渲染，浅色主题下不协调）；
   现全部改用现行 `--dsw-alias-*` 主题 token，并加护栏测试。
+
+### Removed
+- 移除 `zotero_save`（单条归档）：`lit_to_zotero` 是它的严格超集——单条 DOI 同样可写，且额外支持收藏夹
+  名称/`父 > 子` 路径、Crossref 类型映射与 `itemTypes` 白名单、`dryRun` 预演、挂 OA PDF、逐条报告。
+  工具数 8 → 7。
 
 ### Changed
 - 工具改名：`zotero_import` → **`lit_to_zotero`**（wire 名用下划线：DSH 工具名须为标识符形状，连字符会破坏 PTC/typed-dict 派生）。
