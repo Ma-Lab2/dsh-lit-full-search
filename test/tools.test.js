@@ -37,10 +37,10 @@ test.afterEach(() => {
   delete globalThis.fetch;
 });
 
-test('toolDefinitions：5 个全局工具，名字与规格一致', () => {
+test('toolDefinitions：7 个全局工具，名字与规格一致', () => {
   assert.deepEqual(
     toolDefinitions.map((d) => d.name),
-    ['lit_search', 'lit_abstract', 'lit_cited_by', 'zotero_search', 'zotero_save']
+    ['lit_search', 'lit_abstract', 'lit_cited_by', 'zotero_search', 'zotero_save', 'zotero_collections', 'zotero_import']
   );
   for (const def of toolDefinitions) {
     assert.equal(typeof def.execute, 'function', `${def.name} execute`);
@@ -50,6 +50,42 @@ test('toolDefinitions：5 个全局工具，名字与规格一致', () => {
     assert.equal(def.outputSchema.type, 'object');
     assert.equal(def.outputSchema.additionalProperties, false, `${def.name} outputSchema.additionalProperties`);
   }
+});
+
+test('新增工具：zotero_collections / zotero_import 的参数 schema 与 render 冒烟', () => {
+  const cols = toolDefinitions.find((d) => d.name === 'zotero_collections');
+  const imp = toolDefinitions.find((d) => d.name === 'zotero_import');
+  assert.ok(cols, 'zotero_collections 已注册');
+  assert.ok(imp, 'zotero_import 已注册');
+
+  assert.equal(imp.parameters.refs.type, 'array');
+  assert.equal(imp.parameters.refs.required, true);
+  const schema = compileParams(imp.parameters);
+  assert.deepEqual(schema.required, ['refs']);
+  assert.equal('additionalProperties' in schema, false);
+  assert.equal(schema.properties.refs.items.type, 'string');
+  const colsSchema = compileParams(cols.parameters);
+  assert.equal('required' in colsSchema, false, 'zotero_collections 参数全可选');
+
+  const libList = cols.render({}, { libraries: [{ name: '我的文库', libraryKey: 'user', type: 'user' }], library: '', collections: [] });
+  assert.match(libList[0].text, /Zotero 库/);
+  const colList = cols.render(
+    { library: 'LDIA library' },
+    { libraries: [], library: 'LDIA library', libraryKey: 'group:6646099', collectionCount: 1, collections: [{ key: 'K', name: 'liquid crystal target for LIA', path: 'liquid crystal target for LIA', itemCount: 18 }] }
+  );
+  assert.match(colList[0].text, /liquid crystal target for LIA/);
+  assert.match(colList[0].text, /18 条/);
+
+  const dryText = imp.render({}, {
+    dryRun: true,
+    library: 'L',
+    collection: 'C',
+    counts: { created: 2, added: 1, exists: 3, skipped: 0, failed: 0 },
+    items: [{ n: 21, action: 'created', title: 'T', itemKey: '' }],
+    collectionSizeBefore: 31,
+  })[0].text;
+  assert.match(dryText, /导入预演/);
+  assert.match(dryText, /新建 2 · 加挂 1 · 已存在 3/);
 });
 
 test('compileParams：作者 DSL → DSH 参数 schema（required 收集到根，无 additionalProperties）', () => {
@@ -91,6 +127,20 @@ test('lit_search：无参数时用预算默认，limit 被预算夹紧', async (
   assert.equal(url.searchParams.get('filter'), 'publication_year:>2019,publication_year:<2023');
 });
 
+test('lit_search：OpenAlex key（环境/面板）真的进入请求 URL 的 api_key', async () => {
+  const prev = process.env.LIT_SEARCH_OPENALEX_API_KEY;
+  process.env.LIT_SEARCH_OPENALEX_API_KEY = 'TEST-OA-KEY';
+  try {
+    const calls = stubFetch({ results: [] });
+    const def = toolDefinitions.find((d) => d.name === 'lit_search');
+    await def.execute({ query: 'key-carried' });
+    assert.ok(calls[0].url.includes('api_key=TEST-OA-KEY'), `请求未带 api_key：${calls[0].url}`);
+  } finally {
+    if (prev === undefined) delete process.env.LIT_SEARCH_OPENALEX_API_KEY;
+    else process.env.LIT_SEARCH_OPENALEX_API_KEY = prev;
+  }
+});
+
 test('lit_search：结果必须可无损 JSON 往返（模拟 DSH lossless 校验），且不含 abstract 键', async () => {
   const calls = stubFetch({
     results: [mapOpenAlexWorkShim({ title: 'Liquid Crystal', abstract: 'laser driven ion acceleration', doi: '10.1/lc' })],
@@ -104,7 +154,7 @@ test('lit_search：结果必须可无损 JSON 往返（模拟 DSH lossless 校�
   assert.deepEqual(JSON.parse(JSON.stringify(res)), res);
 });
 
-test('mergeSearchResults：DOI 去重 + 交叉排序（OpenAlex 在前）+ LIMIT_CAP 夹紧', () => {
+test('mergeSearchResults：DOI 去重 + 交叉排序（OpenAlex 在前），不设合并总量上限', () => {
   const oa = {
     items: [
       { title: 'A', doi: '10.1/a', source: 'openalex' },
@@ -125,13 +175,18 @@ test('mergeSearchResults：DOI 去重 + 交叉排序（OpenAlex 在前）+ LIMIT
   assert.deepEqual(merged.items.map((i) => i.title), ['A', 'B', 'D', 'C']); // 去重项仍占槽位：round1 A/dup → round2 B/D → round3 C
   assert.equal(merged.diagnostics.openalex.ok, true);
   assert.equal(merged.diagnostics.semanticscholar.ok, true);
-  // 超量夹紧到 LIMIT_CAP
-  const big = {
-    items: Array.from({ length: LIMIT_CAP }, (_, i) => ({ title: `T${i}`, doi: `10.9/${i}` })),
+  // 不设合并总量上限：两源各 LIMIT_CAP 条 → 合并后 2×LIMIT_CAP 条
+  const bigOa = {
+    items: Array.from({ length: LIMIT_CAP }, (_, i) => ({ title: `OA${i}`, doi: `10.9/${i}` })),
     diagnostics: {},
   };
-  const capped = mergeSearchResults(big, big);
-  assert.equal(capped.items.length, LIMIT_CAP);
+  const bigS2 = {
+    items: Array.from({ length: LIMIT_CAP }, (_, i) => ({ title: `S2-${i}`, doi: `10.8/${i}` })),
+    diagnostics: {},
+  };
+  const mergedBig = mergeSearchResults(bigOa, bigS2);
+  assert.equal(mergedBig.items.length, LIMIT_CAP * 2);
+  assert.deepEqual(mergedBig.items.slice(0, 2).map((i) => i.title), ['OA0', 'S2-0']); // 仍是交叉排序
 });
 
 test('lit_search：配置 S2 密钥后双源检索，按 DOI 去重合并', async () => {
@@ -152,6 +207,32 @@ test('lit_search：配置 S2 密钥后双源检索，按 DOI 去重合并', asyn
     assert.deepEqual(titles, ['OA Title', 'S2 Only']); // DOI 重复项去重，OpenAlex 优先
     assert.equal(res.items[1].source, 'semanticscholar');
     assert.equal(res.diagnostics.semanticscholar.ok, true);
+  } finally {
+    if (prevS2 === undefined) delete process.env.LIT_SEARCH_S2_API_KEY;
+    else process.env.LIT_SEARCH_S2_API_KEY = prevS2;
+  }
+});
+
+test('lit_search：limit 是单源上限（limit=2 → 双源各 2 条，合计 4 条）', async () => {
+  const prevS2 = process.env.LIT_SEARCH_S2_API_KEY;
+  process.env.LIT_SEARCH_S2_API_KEY = 'TEST-S2-KEY';
+  try {
+    const calls = stubFetch((_i, url) => {
+      if (url.includes('semanticscholar.org')) {
+        return {
+          data: [
+            { paperId: 'S1', title: 'S2 A', externalIds: { DOI: '10.5/a' } },
+            { paperId: 'S2', title: 'S2 B', externalIds: { DOI: '10.5/b' } },
+          ],
+        };
+      }
+      return { results: [mapOpenAlexWorkShim({ title: 'OA A', abstract: '', doi: '10.4/a' }), mapOpenAlexWorkShim({ title: 'OA B', abstract: '', doi: '10.4/b' })] };
+    });
+    const def = toolDefinitions.find((d) => d.name === 'lit_search');
+    const res = await def.execute({ query: 'per-source', limit: 2 });
+    assert.equal(calls.length, 2);
+    assert.ok(calls.every((c) => /per_page=2|limit=2/.test(c.url)), '两个源各按单源上限请求 2 条');
+    assert.equal(res.items.length, 4); // 合计 = 2 × limit，没有任何总量夹紧
   } finally {
     if (prevS2 === undefined) delete process.env.LIT_SEARCH_S2_API_KEY;
     else process.env.LIT_SEARCH_S2_API_KEY = prevS2;

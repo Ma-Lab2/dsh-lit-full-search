@@ -1,6 +1,6 @@
 # dsh-lit-full-search
 
-DSH 文献检索插件（轻量版，零 npm 依赖）。在**任何模式 / 任何 preset** 下注册 5 个全局
+DSH 文献检索插件（轻量版，零 npm 依赖）。在**任何模式 / 任何 preset** 下注册 7 个全局
 model 工具，并提供侧栏「全面文献搜索设置」面板（密钥、检索预算、服务诊断）。
 
 直连 [OpenAlex](https://docs.openalex.org)、[Semantic Scholar](https://api.semanticscholar.org)
@@ -8,12 +8,33 @@ model 工具，并提供侧栏「全面文献搜索设置」面板（密钥、�
 
 ## 安装
 
+插件以 **profile bundle** 方式安装：包既要成为目标 profile 的依赖，包名也要出现在该 profile
+`package.json` 的 `dsh.profile.bundles` 数组里（bundle 列表决定 `cordis.patch.yml` 是否被应用）。
+桌面端用 `core-020` profile，web 端是另一个 profile（`web`）；装到哪个 profile 就只在那个 profile 生效。
+
+### 开发安装（推荐：链接本地目录）
+
 ```bash
-cd interfaces/dsh-lit-full-search
-npm pack            # 生成 dsh-lit-full-search-1.0.1.tgz
-dsh plugin --profile web add <绝对路径>/dsh-lit-full-search-1.0.1.tgz
-# 重启 DSH（Host 端代码经 ESM 缓存，必须重启才重载）
+# profile 目录：~/.dsh/profiles/<name>
+dsh plugin --profile core-020 add "link:D:/path/to/dsh-lit-full-search"
+# 再把 "dsh-lit-full-search" 加入该 profile package.json 的 dsh.profile.bundles
+# （从 DSH「插件管理」界面安装时会自动完成依赖与 bundle 列表这两步）
 ```
+
+桌面端启动时的依赖恢复会卸载 `file:` / tarball 形式的依赖，**本地开发必须用 `link:`**，
+否则每次启动都会被打回原状。
+
+### 发布包安装
+
+```bash
+npm pack      # 生成 dsh-lit-full-search-<VERSION>.tgz
+dsh plugin --profile core-020 add "<绝对路径>/dsh-lit-full-search-<VERSION>.tgz"
+```
+
+### 生效方式
+
+Host 端代码（`lib/*.js`：工具与路由）走 ESM 缓存，**改完必须重启 DSH**；客户端面板
+（`lib/client.js`）另需刷新页面。`/lit-full-search/api/*` 返回 404 通常就是「改了但没重启」。
 
 ## 工具（全局，任何模式下可见）
 
@@ -22,11 +43,52 @@ dsh plugin --profile web add <绝对路径>/dsh-lit-full-search-1.0.1.tgz
 | `lit_search` | 学术文献检索：OpenAlex；配置 Semantic Scholar API Key 后**双源检索**，按 DOI 去重合并（单源失败不拖垮整体，记入 `diagnostics`） | `query`(必填), `limit`, `yearFrom`, `yearTo` |
 | `lit_abstract` | 按 DOI 或标题取摘要（OpenAlex） | `doi` / `title` 至少其一 |
 | `lit_cited_by` | 被引列表（DOI 或 OpenAlex work ID） | `identifier`(必填), `limit` |
-| `zotero_search` | 检索本地 Zotero 库（只读） | `query`(必填), `limit`, `qmode` |
-| `zotero_save` | 归档到 Zotero（DOI 查重，幂等） | `doi` / `title`, `collectionKey` |
+| `zotero_search` | 检索本地 Zotero 库（只读）；`library` 可指定群组库 | `query`(必填), `limit`, `qmode`, `library` |
+| `zotero_save` | 归档到 Zotero（DOI 查重，幂等）；`library` 可指定群组库 | `doi` / `title`, `collectionKey`, `library` |
+| `zotero_collections` | 列出 Zotero 库与收藏夹（key / 名称 / 完整路径 / 条目数），用于定位写回目标 | `library`, `query` |
+| `zotero_import` | **批量**把文献列表写回指定库/收藏夹（支持群组库）：元数据解析 → 去重 → 新建/加挂（可选挂 OA PDF）→ 报告 | `refs`(必填), `library`, `collection`, `itemTypes`, `dryRun`, `attachPdf` |
 
 > 结果统一带卡片渲染（`meta.card='literature'`），与 dsh-literature-search 0.3.0 的
 > 浏览器端文献卡片渲染器兼容。
+
+> **`limit` 的语义**：`lit_search` 的 `limit` 是**每个数据源**的上限 —— 只配 OpenAlex 时返回
+> ≤ `limit` 条；配了 S2 密钥走双源时，两源各取 `limit` 条，按 DOI（无 DOI 按标题+年份）去重后
+> 交叉合并，**合计最多 `2 × limit`**（去重只减不增），**不设合并总量上限**。
+> `lit_cited_by`（≤25）与 `zotero_search`（≤100）是单源，`limit` 即总量上限。
+
+## Zotero 库与收藏夹定位（群组库支持）
+
+Zotero 本地 API（`http://localhost:23119/api`）与 Web API 路径同形：个人库固定 `users/0`，
+群组库用 `groups/<id>`。插件里 `library` 参数统一表达目标库：
+
+| 写法 | 含义 |
+| --- | --- |
+| 省略 / `'user'` | 个人库（`/users/0`），旧行为不变 |
+| `'group:6441110'` / `'6441110'` | 群组库（`/groups/6441110`） |
+| `"WENJUN_MA's Group"` | 按库名解析（精确 → 包含匹配；多义时报错并列出候选） |
+
+`collection` 参数可以是收藏夹 key、名称，或 `'父收藏夹 > 子收藏夹'` 路径。**先定位再写**：
+
+```text
+zotero_collections({ library: "WENJUN_MA's Group", query: "crystal" })
+  → 2.Novel Targets > liqiud crystal target  [YJUSYVEM] · 31 条
+zotero_import({ refs: [...], library: "WENJUN_MA's Group", collection: "2.Novel Targets > liqiud crystal target", itemTypes: ["journalArticle"] })
+```
+
+写回语义（`zotero_import`）：
+- 目标库内按 DOI（无 DOI 按标题归一化）去重：**已在目标收藏夹 → 跳过；在库但不在收藏夹 → 加挂；否则新建**。
+- 元数据链 Crossref → OpenAlex → 引用行内解析，逐级降级不中断；单条失败只记 `failed`。
+- `dryRun: true` 先看计划（`exists/added/created/skipped/failed` 计数）再实写。
+- `attachPdf: true` 时，新建条目后尝试从 OpenAlex `best_oa_location` 取 OA PDF 并按 Zotero 四段上传挂为附件
+  （校 `%PDF` 魔数；同 md5 已存在则不重传；**下载/上传失败只记录在该条 `pdf/pdfError`，不影响建档**）。
+- 写请求需 Zotero 10+；首次 401 会弹 Zotero 授权窗（点一次「允许 / 始终允许」后自动重试）。
+- 单次上限 200 条。
+
+> 会话里的工具结果由客户端 `tool.call.toolview` 槽位按 wire 工具名渲染：`zotero_import` 显示
+> 「库 › 收藏夹 + 五类计数 + 逐条动作徽标（含 PDF 状态）」，`zotero_collections` 显示库/收藏夹清单；
+> 结构化 meta 缺失时回落该工具自身的文本结果。
+
+> 注意：个人库条目与群组库条目是**不同 library**，「个人库里已有」不会让群组库写入被跳过。
 
 ## 设置面板（「全面文献搜索设置」）
 
@@ -42,7 +104,7 @@ id `lit-full-search-settings`），分四段：
   输入框**留空即保持不变**，输入新值才覆盖；要删除密钥点「清除」（可撤销），保存后生效。
   GET 回显只含掩码与布尔状态，不下发明文。
 - **检索预算**（防上下文爆炸，逐项带区间说明，失焦自动夹到合法范围）：
-  - `searchLimit`（lit_search，1–25，默认 10）
+  - `searchLimit`（lit_search，1–25，默认 10；**每个数据源**的上限，双源时合计最多 2×，不设合并总量上限，见上方 `limit` 说明）
   - `citedByLimit`（lit_cited_by，1–25，默认 25）
   - `zoteroLimit`（zotero_search，1–100，默认 20）
   - `abstractChars`（lit_abstract 摘要字符上限，200–100000，默认 2000）
@@ -61,11 +123,14 @@ Host 端路由：`GET|POST /lit-full-search/api/config`（面板读写）、
 ## 开发
 
 ```bash
-node --check lib/*.js
-node --test test/
+npm run check      # node --check 逐个做语法检查
+npm test           # node --test：自动发现 test/*.test.js
 ```
 
 测试全部本地（mock fetch / 注入 fetchImpl），不触碰网络与真实 Zotero。
+
+> 用 `node --test`（不带路径参数）而不是 `node --test test/`：后者在 Node 24 + Windows 下会把
+> `test/` 当成模块路径解析，报 `Cannot find module ...\test`。
 
 ## 认证优先级
 

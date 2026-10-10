@@ -27,6 +27,7 @@
     "lib/index.js",
     "lib/config.js",
     "lib/light-core.js",
+    "lib/zotero-import.js",
     "lib/tools.js",
     "lib/diagnostics.js",
     "lib/client.js",
@@ -34,8 +35,8 @@
     "README.md"
   ],
   "scripts": {
-    "test": "node --test test/",
-    "check": "node --check lib/index.js && node --check lib/config.js && node --check lib/light-core.js && node --check lib/tools.js && node --check lib/diagnostics.js && node --check lib/client.js"
+    "test": "node --test",
+    "check": "node --check lib/index.js && node --check lib/config.js && node --check lib/light-core.js && node --check lib/zotero-import.js && node --check lib/tools.js && node --check lib/diagnostics.js && node --check lib/client.js"
   },
   "keywords": [
     "dsh",
