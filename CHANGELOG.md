@@ -6,6 +6,53 @@ The format is based on Keep a Changelog and this project follows Semantic Versio
 
 ## [Unreleased]
 
+## [1.1.1] - 2026-10-11
+
+压力测试发现两个工具在真实会话里**整体不可用**（模型只收到一条 Error），本版修复；同时补上让它们漏网的
+测试层，并处理 Semantic Scholar 的限流与网络失败可见性。
+
+### Fixed
+- **`lit_to_zotero` 任何调用都失败**（P0）：逐条记录的 `n` 恒为 `undefined`（`parseReferenceLine` 对裸 DOI/裸标题
+  不产出 `n`，而记录对象写死了 `n: parsed.n`），DSH 的 lossless JSON 校验会丢弃该键并判定往返不等，
+  整个工具结果被拒（`value is not lossless JSON`），模型拿不到任何数据。现字符串条目回落到 1-based 序号，
+  对象条目仍原样保留显式 `n`（对应综述里的参考文献序号）。
+- **`zotero_collections` 只要带 `library` 就失败**（P0）：`execute` 返回 `libraryKey`，但 `outputSchema` 声明了
+  `additionalProperties: false` 却没列出该字段，DSH 直接报 `"value.libraryKey" is not a declared property`。
+  这是该工具的主要用法（列某个库的收藏夹），等于整体不可用。现补声明。
+- `lit_abstract` 传不存在的 DOI 时抛错，且错误信息里夹带 OpenAlex 网关的 **404 HTML 整页**；其文档承诺的
+  「无摘要返回 `status=missing`」从未生效。现 404 视为「未找到」→ `status=missing`；`lit_cited_by` 据此给出
+  「无法解析「…」为 OpenAlex work ID」而不是 HTML 噪声。`fetchJson` 统一对错误响应体去标签并截断。
+- `zotero_enrich` 的 `unknownFields` 只进结构化结果、**不进 `render`**，而模型只看得到 `render`：把
+  `abstractNote` 误写成 `abstract` 时表现为「调用成功但没有摘要」，模型无从自我修正。现 render 明确列出
+  被忽略的字段名。
+- `lit_search` 年份区间倒挂（`yearFrom > yearTo`）时两个源都返回空集，渲染成「未找到相关文献」，会被模型
+  误读为「该方向没有文献」。现直接报错并提示调换。
+- `lit_search` 空白 query 不再透传给外网源（会返回任意热门文献，被模型当成检索结果），现直接报错。
+- `zotero_collections` 的 `render` 在 value 缺字段时抛错（`Cannot read properties of undefined`）；现取默认值兜底。
+- Semantic Scholar 失败过去被 `Promise.allSettled` 吞掉、只写进结构化 diagnostics，`render` 不显示，
+  表现为「配了 key 但结果全是 openalex」。现在 `lit_search` 的 render 末尾会列出失败的数据源与错误原因。
+- S2 个人 key 配额为全端点合计 1 次/秒：并发调用多个 `lit_search` 时第二个请求即 429。现所有 S2 请求
+  串行排队、最小间隔 1.1 s，429 退避 2 s 后重试一次。
+- S2 网络层失败（ECONNRESET / 连接超时等）先重试一次（走代理失败的那次改走直连），重试也失败才熔断 30 s，
+  排队请求立即失败而不是逐个等连接超时（实测 5 个并发请求在 S2 不可达时从 53 s 降到 11 s）。
+
+### Added
+- 新增外网代理支持：面板「外网代理」字段 / `LIT_SEARCH_PROXY` / `HTTPS_PROXY`（优先级依次递减）。
+  OpenAlex、Semantic Scholar、Crossref、OA PDF 下载与服务诊断经 HTTP CONNECT 隧道访问；本地 Zotero 不走代理；
+  不修改全局 dispatcher（插件跑在 Host 进程内，不波及其它插件）。代理本身连不上时自动回落直连。
+- 工具契约测试 `test/tool-contract.test.js` + 校验器 `test-support/contract.js`：对**每个工具**的 `execute()` 返回值
+  复刻 DSH 的三道硬校验（lossless JSON 往返、`outputSchema` 封闭对象、`render` 形状），并逐工具跑分支用例。
+  两个 P0 之所以能通过当时全绿的 93 项测试，根因就是**没有任何测试校验过 execute 输出与 schema/序列化的关系**。
+- 真实链路压力测试 `work/stress/`：`stress-live.mjs` 用 70 个用例打真实 OpenAlex / Semantic Scholar / 本地 Zotero，
+  逐例做契约校验并记录渲染体量（模型实际吃进的字符数）与耗时；`stress-concurrency.mjs` 做 24 路并发与 render 幂等检查。
+
+### Changed
+- `lit_search` / `lit_cited_by` / `zotero_search` 的 `render` 把作者裁到前 6 人并注明「等 N 人」
+  （结构化结果与文献卡片不受影响）。压力测试中最大单次渲染 17,939 → 14,156 字符。
+- `lit_search` 的 query 含中日韩字符时，`render` 末尾附「外网源对中文匹配差，建议改英文/中英混合」提示，
+  避免模型把偏题结果当成该方向的真实文献面貌。
+- `package.json` 的 `version` 与 `VERSION` 对齐（此前停留在 1.0.3；治理校验只读 `VERSION`，所以一直没被发现）。
+
 ## [1.1.0] - 2026-10-10
 
 ### Added

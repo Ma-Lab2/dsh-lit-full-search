@@ -126,6 +126,9 @@ zotero_abstract({ ref: "QZX8A2PX", library: "WENJUN_MA's Group" })        → �
 id `lit-full-search-settings`），分四段：
 
 - **身份标识** —— `mailto`（OpenAlex 礼貌邮箱，提升限流配额；兜底 `LIT_SEARCH_MAILTO`）
+  和 `proxy`（外网代理，如 `http://127.0.0.1:7890`；兜底 `LIT_SEARCH_PROXY` / `HTTPS_PROXY`）。
+  代理对 OpenAlex / Semantic Scholar / Crossref / OA PDF 下载与服务诊断生效，**本地 Zotero 不走代理**；
+  代理软件没开时自动回落直连。
 - **密钥** —— 每项带「已设置 …尾4位 / 未设置」状态徽标：
   - `openAlexApiKey`（兜底 `LIT_SEARCH_OPENALEX_API_KEY`）
   - `s2ApiKey` —— 设置后 `lit_search` 双源检索（兜底 `LIT_SEARCH_S2_API_KEY`）
@@ -161,6 +164,31 @@ npm test           # node --test：自动发现 test/*.test.js
 
 > 用 `node --test`（不带路径参数）而不是 `node --test test/`：后者在 Node 24 + Windows 下会把
 > `test/` 当成模块路径解析，报 `Cannot find module ...\test`。
+
+### 工具契约（改 schema 或返回对象时必看）
+
+`test/tool-contract.test.js` 对**每个工具**的 `execute()` 返回值复刻 DSH 的三道硬校验：
+
+1. **lossless JSON** —— `JSON.stringify` 往返必须深等。值为 `undefined` 的键会被 stringify 丢掉，
+   往返不等，DSH 直接拒绝整个结果（`value is not lossless JSON`）。
+2. **`outputSchema`** —— 根对象声明了 `additionalProperties: false`，多回一个未声明的键就报
+   `"value.X" is not a declared property`，工具整体不可用。
+3. **`render`** —— 必须返回 `[{ type: 'text', text: string }]`；**模型只看得到 render**，任何只进结构化
+   结果、不进 render 的信息（如 `unknownFields`）对模型等于不存在。
+
+校验器在 `test-support/contract.js`（放在 `test/` 之外，避免被 `node --test` 当成空测试文件计入）。
+这三道校验任何一条不过，工具在真实会话里就是「模型只收到一条 Error」，而普通单元测试可能全绿——
+2026-10 的压力测试就是这样漏掉了 `lit_to_zotero` 与 `zotero_collections` 两个 P0。
+
+### 真实链路压力测试
+
+```bash
+node work/stress/stress-live.mjs        # 70 个用例打真实 OpenAlex / S2 / 本地 Zotero
+node work/stress/stress-concurrency.mjs # 24 路并发 + render 幂等
+```
+
+`stress-live.mjs` 逐例做上面三道契约校验，并打印**渲染文本字符数**（模型实际吃进上下文的量）与耗时；
+写入类工具一律 `dryRun: true`，不碰真实库。跑之前确保 Zotero 已开启本地 API。
 
 ## 认证优先级
 
