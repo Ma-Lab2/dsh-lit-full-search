@@ -17,6 +17,7 @@ import {
   parseReferenceLine,
   resolveCollection,
   resolveLibraryKey,
+  resolveMetadata,
   splitApaAuthors,
 } from '../lib/lit-to-zotero.js';
 
@@ -183,6 +184,41 @@ test('fromCrossref：字段白名单与作者映射（JATS 摘要被清洗）', 
   assert.equal(item.fields.abstractNote, 'Damage resistance of nematic liquid crystals.');
   assert.deepEqual(item.creators, [{ lastName: 'Kosc', firstName: 'T. Z.' }, { lastName: 'Kozlov', firstName: 'A. A.' }]);
   assert.equal(item.doi, '10.1038/s41598-019-52305-3');
+});
+
+test('resolveMetadata：Crossref 缺摘要时按 DOI 补一次（OpenAlex → S2）；已有摘要不补（回归：3/8 条目落成空摘要）', async () => {
+  const parsed = { doi: '10.1038/s41598-019-52305-3', title: '', raw: '' };
+  const openAlexRoute = [/api\.openalex\.org\/works\/doi:/, () => jsonResponse({ id: 'W1', display_name: 'T', abstract_inverted_index: { Filled: [0], by: [1], openalex: [2] } })];
+
+  // Crossref 命中但没有 abstract → 用 OpenAlex 补上
+  let calls = installFetch({ crossrefMessage: { ...crossrefMessage(), abstract: undefined }, routes: [openAlexRoute] });
+  const filled = await resolveMetadata(parsed, {});
+  assert.equal(filled.fields.abstractNote, 'Filled by openalex');
+  assert.ok(calls.some((c) => /api\.openalex\.org\/works\/doi:/.test(c.url)), '缺摘要时应回退查 OpenAlex');
+
+  // Crossref 已给 abstract → 不额外请求（别为了补摘要白白多打一次网络）
+  calls = installFetch({});
+  const kept = await resolveMetadata(parsed, {});
+  assert.equal(kept.fields.abstractNote, 'Damage resistance of nematic liquid crystals.');
+  assert.ok(!calls.some((c) => /api\.openalex\.org/.test(c.url)), '已有摘要时不应再查 OpenAlex');
+
+  // abstractFallback:false → 保持空（大批量导入想省时间时用）
+  calls = installFetch({ crossrefMessage: { ...crossrefMessage(), abstract: undefined } });
+  const off = await resolveMetadata(parsed, { abstractFallback: false });
+  assert.equal(off.fields.abstractNote, '');
+  assert.ok(!calls.some((c) => /api\.openalex\.org/.test(c.url)), '关掉后不应查 OpenAlex');
+
+  // OpenAlex 也没有 + 传了 S2 key → 用 S2 补（Labaune 2013 就是这种：OpenAlex 无、S2 有）
+  calls = installFetch({
+    crossrefMessage: { ...crossrefMessage(), abstract: undefined },
+    routes: [
+      [/api\.openalex\.org\/works\/doi:/, () => jsonResponse({ id: 'W1', display_name: 'T', abstract_inverted_index: null })],
+      [/api\.semanticscholar\.org/, () => jsonResponse({ paperId: 'P1', title: 'T', abstract: '  From   S2 ' })],
+    ],
+  });
+  const viaS2 = await resolveMetadata(parsed, { auth: { s2ApiKey: 'TEST-S2' } });
+  assert.equal(viaS2.fields.abstractNote, 'From S2', 'S2 摘要要压掉多余空白');
+  assert.ok(calls.some((c) => /api\.semanticscholar\.org/.test(c.url)));
 });
 
 test('resolveLibraryKey：user / group:<id> / 纯数字 / 名称 / 多义与未知报错', () => {

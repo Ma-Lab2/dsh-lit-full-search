@@ -6,6 +6,72 @@ The format is based on Keep a Changelog and this project follows Semantic Versio
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-10-11
+
+新增「文献综述」工作台（agent preset + 中栏 tab + 设置入口）；修复插件 CSS 自 v1.1.0 起从未生效、
+以及摘要链路的两处缺口（建档写入 + 本地读取）。
+
+### Fixed
+- **`lit_to_zotero` 建档时把摘要落成空串**（根因，与下面 `zotero_abstract` 那条是一条链）：`fromCrossref`
+  拿不到摘要就写空串并**直接返回**，不再问 OpenAlex/S2；而 Crossref 对很多出版社不给 `abstract`
+  （Nature、APS 等在 Crossref 里通常没有）。实测导入 8 条有 3 条落成「有条目、没摘要」。
+  现元数据链末尾按 DOI 补一次（OpenAlex → S2），新增 `abstractFallback`（缺省开；大批量导入想省时间可设 `false`，
+  因为每个缺摘要的条目最多多 1 次 OpenAlex + 1 次 S2，而 S2 受 1 rps 节流）。
+  实测此前为空的三个 DOI 现均能取到摘要（1181 / 645 / 1149 字）。
+- `zotero_abstract` 在本地 `abstractNote` 为空时只打印「可试 lit_abstract」的提示，不自动回退。
+  现按 DOI 自动回退外网（OpenAlex → S2），新增 `source` 字段标明摘要实际来自哪里
+  （`zotero` / `openalex` / `semanticscholar`），render 里写明「本地无摘要，已回退外网」；
+  新增 `externalFallback`（缺省开，设 `false` 可严格只读本地、不走网络）。
+- **插件的全部 CSS 从未生效**（自 v1.1.0 起）：设置面板与工具卡片一直退化成无边框的纯文本。
+  根因是 `ctx.effect(fn)` 的语义——它**立刻调用 `fn`**，并把 `fn` 的**返回值**当作清理函数
+  （平台自身写法见 `dsh-cordis-client-runner`：`ctx.effect(() => dispose, "…")`）。
+  原代码写的是 `ctx.effect(() => styleEl.remove(), …)`，等于注入 `<style>` 后**当场把它删掉**。
+  现改为平台通用写法：`document.head.appendChild` + `data-plugin-css` 标记去重，不注册移除。
+  真机表现：面板的分区/输入框/徽标、卡片的边框与药丸全部出现。
+  新增 `test/client-css.test.js`（4 项）：用**忠实模拟 `ctx.effect` 语义**的假 ctx 跑 `apply()`，
+  断言注入后 `<style>` 仍在、重复 apply 不重复注入、源码里用到的每个 `lfs-*` class 都有对应规则。
+  已验证该测试在旧代码下必红（`期望注入 1 个 <style>，实际 0 个`）。
+
+### Added
+- **「文献综述」工作台入口（V1）**：设置面板顶部新增入口卡片与「进入文献综述工作台」按钮。
+  点击 → 打开新建会话界面 → 预设选新增的 **「文献综述」**（`id: lit-review`）→ 该会话中栏出现
+  「文献综述」tab（即工作台，当前为流程骨架：选题与范围 / 检索与去重 / 筛选与分级 / 精读与抽取 /
+  综合与共识 / 成稿与引用，各步工作流随后接入）。三个机制：
+  ① `cordis.patch.yml` 声明 `@deepseek-ai/dsh-agent-preset` 行 `id: lit-review`、`plugins: []`
+  ——**故意留空**：8 个工具已由 profile 行在根作用域全局注册，若在 preset 里再挂一次同名插件会
+  二次注册工具与路由；后续要在这个模式里装配专属工具/人格，往 `plugins` 追加行即可。
+  ② Host 新增 `GET /lit-full-search/api/session-preset?session=<id>`：优先读 `agentPreset`
+  **会话投影**（创建头 + 最新选择事件），创建头里的 `default` 绝不单独采信；并订阅
+  `agent-preset/selected` 维护快速通道。
+  ③ Client 用 renderless `ViewGate` 挂在 `conversation.session.header.utilities`（会话作用域），
+  按本会话 preset **注册/注销 `conversation.view` 条目本身**——该 slot 的 tab 由注册条目直接投影，
+  `render` 返回 `null` 藏不住 tab。门控带模块级引用计数（多实例共享一份注册）与 3 次退避重试。
+  新增测试 2 项（preset 路由的命中/未知会话/405；`currentSessionPreset` 的投影优先、无 sessionId、
+  服务缺失不抛错），并把既有「2 条路由」断言更新为 3 条。
+  **已知限制**：preset 在会话视图挂载时解析一次（带有限重试），所以「会话中途切换 preset」要等会话视图
+  重新挂载（刷新/重开）tab 才变；正常路径（新建会话时选「文献综述」）不受影响。
+  client.js 里预留了 `ctx.get('remote')` 的事件订阅用于将来做实时切换，但当前客户端 Service 目录
+  （layout/locale/sessions/slots/theme/timer/uiWorkspace/workspaces）里没有这类事件总线，
+  该分支恒不触发——已在代码注释中标注。
+- `zotero_collections` 扩展为**三级下钻**：省略 `library` → 列库；给 `library` → 列该库收藏夹
+  （key/名称/完整路径/条目数）；再给 `collection` → 列该收藏夹里的条目（key/标题/作者/年份/DOI），
+  并回报收藏夹总条目数 `itemCount`。此前想核对「某个专题收藏夹已收哪些文献」只能用 `zotero_search`
+  搜全库绕道，没有按收藏夹枚举的手段。
+  返回值形状**固定为 10 个键**（未参与本次下钻的级别给空值，绝不用 `undefined`），schema 与实际返回严格一致；
+  `collectionCount` 恒等于 `collections.length`，`listed` 恒等于 `items.length`。
+  `query` 只过滤「列收藏夹」这一级，**不会**把第 3 级要访问的目标收藏夹过滤掉。
+  卡片按 `meta.kind` 在收藏夹视图与条目视图之间分发。
+- `lit_abstract` 在 OpenAlex 无摘要时**自动回退 Semantic Scholar**（配了 S2 key 时），`source` 标
+  `semanticscholar`。OpenAlex 对相当一部分文献没有 `abstract_inverted_index`——实测连 Labaune 2013
+  （Nat Commun，209 被引的 pB 奠基工作）都是空的，而 S2 存有完整摘要；此前会把「OpenAlex 没存」
+  误报成「这篇没有摘要」。OpenAlex 已有摘要时不多发请求；S2 也没有则维持 `status=missing`。
+
+### Changed
+- `zoteroSearch` 与新的 `zoteroCollectionItems` 共用条目映射与过滤（`mapZoteroItem` / `keepRealItems`），
+  避免两处各写一份「丢附件/笔记/批注」的逻辑而漂移。
+- 工具数保持 **8**：新增的「列收藏夹条目」能力并入 `zotero_collections` 而非新开工具——`zotero_collections`
+  与 `zotero_collection_items` 只差一个后缀，两个高度相似的工具名是诱发选错工具的典型形态。
+
 ## [1.1.2] - 2026-10-11
 
 真机写入自检（建条目 → 读回核对 → 删除 → 验残留）抓到一个 v1.1.1 的回归并修复。

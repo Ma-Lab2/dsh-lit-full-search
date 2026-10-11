@@ -290,17 +290,55 @@ test('契约 zotero_search：默认 / 指定群组库 / qmode', async () => {
   ]);
 });
 
-test('契约 zotero_collections：**给了 library 也必须过 schema**（回归：漏声明 libraryKey）', async () => {
+test('契约 zotero_collections：三级下钻（库 → 收藏夹 → 条目），形状固定、query 不会藏掉目标收藏夹', async () => {
   const out = await contractCases('zotero_collections', [
-    [{}, '只列库（无 libraryKey）'],
-    [{ library: 'user' }, '个人库'],
-    [{ library: GROUP }, '群组库（回归用例：曾因 libraryKey 未声明而整体报错）'],
-    [{ library: GROUP, query: 'crystal' }, '带过滤'],
-    [{ library: GROUP, query: 'no-match-zzz' }, '过滤无命中'],
+    [{}, '第 1 级：只列库'],
+    [{ library: 'user' }, '第 2 级：个人库收藏夹'],
+    [{ library: GROUP }, '第 2 级：群组库（回归用例：曾因 libraryKey 未声明而整体报错）'],
+    [{ library: GROUP, query: 'crystal' }, '第 2 级：带过滤'],
+    [{ library: GROUP, query: 'no-match-zzz' }, '第 2 级：过滤无命中'],
+    [{ library: GROUP, collection: 'liqiud crystal target' }, '第 3 级：按名称列条目'],
+    [{ library: GROUP, collection: '2.Novel Targets > liqiud crystal target' }, '第 3 级：按父 > 子路径'],
+    [{ library: GROUP, collection: 'liqiud crystal target', limit: 1 }, '第 3 级：limit=1'],
+    [{ library: GROUP, collection: 'liqiud crystal target', limit: 999 }, '第 3 级：limit 越界'],
+    // query 只该过滤「列收藏夹」那一级；不能把第 3 级要访问的收藏夹过滤掉
+    [{ library: GROUP, query: 'no-match-zzz', collection: 'liqiud crystal target' }, '第 3 级 + 无关 query 仍能命中'],
   ]);
-  assert.equal(out[0].value.libraryKey, undefined, '无 library 分支不应回 libraryKey');
-  assert.equal(out[2].value.libraryKey, GROUP, '给了 library 必须回 libraryKey');
+
+  // 形状固定：10 个键始终存在，且类型正确（no undefined → 过 lossless）
+  const KEYS = ['libraries', 'library', 'libraryKey', 'collectionCount', 'collections', 'collection', 'collectionKey', 'itemCount', 'listed', 'items'];
+  for (const { value } of out) {
+    assert.deepEqual(Object.keys(value).sort(), [...KEYS].sort(), '返回值必须是固定的 10 个键');
+    assert.equal(typeof value.itemCount, 'number');
+    assert.equal(typeof value.listed, 'number');
+    assert.equal(typeof value.collectionCount, 'number');
+    assert.equal(value.collectionCount, value.collections.length, 'collectionCount 恒等于 collections.length');
+    assert.equal(value.listed, value.items.length, 'listed 恒等于 items.length');
+  }
+
+  // 第 1 级
+  assert.equal(out[0].value.libraryKey, '', '无 library 时 libraryKey 为空串');
   assert.ok(out[0].value.libraries.length >= 1, '只列库时必须有 libraries');
+  assert.deepEqual(out[0].value.items, [], '第 1 级不带条目');
+  // 第 2 级
+  assert.equal(out[2].value.libraryKey, GROUP, '给了 library 必须回 libraryKey');
+  assert.ok(out[2].value.collections.length >= 1);
+  assert.deepEqual(out[2].value.items, [], '第 2 级不带条目');
+  assert.equal(out[4].value.collectionCount, 0, '过滤无命中 → 0');
+  // 第 3 级
+  for (const i of [5, 6, 7, 8, 9]) {
+    assert.equal(out[i].value.collectionKey, 'YJUSYVEM', '第 3 级要回 collectionKey');
+    assert.match(out[i].value.collection, /liqiud crystal target/);
+    assert.deepEqual(out[i].value.collections, [], '第 3 级不回收藏夹列表（避免把整库几百个收藏夹塞进结果）');
+  }
+  assert.equal(out[7].value.listed, 1, 'limit=1 只列 1 条');
+  assert.equal(out[9].value.listed, out[5].value.listed, 'query 不应影响第 3 级');
+
+  installFetch();
+  await assert.rejects(
+    () => byName.zotero_collections.execute({ collection: 'no-such-collection', library: GROUP }),
+    /找不到收藏夹/,
+  );
 });
 
 test('契约 lit_to_zotero：真实写入路径（非 dryRun）也必须过契约（用替身，不碰真实库）', async () => {

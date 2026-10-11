@@ -5,7 +5,7 @@ import path from 'node:path';
 import { Readable } from 'node:stream';
 import { mkdtempSync, rmSync, existsSync, readFileSync } from 'node:fs';
 
-import { name, inject, apply, ROUTE, DIAGNOSE_ROUTE, routeRegistry } from '../lib/index.js';
+import { name, inject, apply, ROUTE, DIAGNOSE_ROUTE, PRESET_ROUTE, routeRegistry, currentSessionPreset } from '../lib/index.js';
 
 // 路由测试用隔离 DSH_HOME，避免读写真实用户配置。
 const tmpHome = mkdtempSync(path.join(os.tmpdir(), 'lfs-index-'));
@@ -109,9 +109,10 @@ test('apply：注册 8 个全局工具 + 路由', () => {
   apply(ctx);
   assert.equal(registeredTools.length, 8);
   assert.deepEqual(registeredTools.map((t) => t.name), ['lit_search', 'lit_abstract', 'lit_cited_by', 'zotero_search', 'zotero_collections', 'lit_to_zotero', 'zotero_enrich', 'zotero_abstract']);
-  assert.equal(routes.length, 2);
+  assert.equal(routes.length, 3);
   assert.equal(routes[0].path, ROUTE);
   assert.equal(routes[1].path, DIAGNOSE_ROUTE);
+  assert.equal(routes[2].path, PRESET_ROUTE);
   assert.equal(routes[0].kind, 'exact');
 });
 
@@ -126,29 +127,33 @@ test('registerRoute：refcount —— 重复 apply 只注册一次，引用归�
     },
   };
   const effects = [];
-  // 通过两次 apply（相同 webServer）模拟组合重载；每次 apply 注册 2 条路由
+  // 通过两次 apply（相同 webServer）模拟组合重载；每次 apply 注册 3 条路由
   const mkCtx = () => ({
     get: (k) => (k === 'webServer' ? fakeWS : undefined),
     effect: (fn) => effects.push(fn),
   });
   apply(mkCtx());
   apply(mkCtx());
-  assert.equal(registerCalls, 2); // 第二次 apply 走 refs 计数，不再真实注册
+  assert.equal(registerCalls, 3); // 第二次 apply 走 refs 计数，不再真实注册
 
-  // effects：tools 缺失（mkCtx 只给 webServer），每个 apply 推 2 个路由 effect（顺序：apply1 ROUTE、apply1 DIAGNOSE、apply2 ROUTE、apply2 DIAGNOSE）
+  // effects：tools 缺失（mkCtx 只给 webServer），每个 apply 推 3 个路由 effect
+  // （顺序：apply1 ROUTE、apply1 DIAGNOSE、apply1 PRESET、apply2 ROUTE、apply2 DIAGNOSE、apply2 PRESET）
   const returned = effects.map((fn) => fn());
-  assert.equal(returned.length, 4);
+  assert.equal(returned.length, 6);
   returned[0](); // ROUTE refs 2 → 1
   returned[1](); // DIAGNOSE refs 2 → 1
+  returned[2](); // PRESET refs 2 → 1
   assert.equal(disposeCalls, 0);
-  returned[2](); // ROUTE refs 1 → 0 → dispose
+  returned[3](); // ROUTE refs 1 → 0 → dispose
   assert.equal(disposeCalls, 1);
-  returned[3](); // DIAGNOSE refs 1 → 0 → dispose
+  returned[4](); // DIAGNOSE refs 1 → 0 → dispose
   assert.equal(disposeCalls, 2);
+  returned[5](); // PRESET refs 1 → 0 → dispose
+  assert.equal(disposeCalls, 3);
 
   // 引用归零后再次 apply → 重新注册
   apply(mkCtx());
-  assert.equal(registerCalls, 4);
+  assert.equal(registerCalls, 6);
 });
 
 test('handleConfig：GET 返回安全视图（键只给掩码/状态，不下发明文）', async () => {
@@ -235,4 +240,51 @@ test('handleDiagnose：GET 返回五项检查（stub fetch，防真实网络）�
     globalThis.fetch = realFetch;
     for (const [key, value] of Object.entries(savedEnv)) process.env[key] = value;
   }
+});
+
+test('handleSessionPreset：按会话返回 preset；未知会话返回空；非 GET 405', async () => {
+  routeRegistry.clear();
+  const handlers = new Map();
+  const fakeWS = { register({ path, handler: h }) { handlers.set(path, h); return () => {}; } };
+  const ctx = {
+    get(key) {
+      if (key === 'webServer') return fakeWS;
+      if (key === 'sessions') {
+        return { get: (sid) => (sid === 'lit-session' ? { id: 'lit-session', agentPreset: 'lit-review' } : undefined) };
+      }
+      return undefined;
+    },
+    effect() {},
+  };
+  apply(ctx);
+  const handler = handlers.get(PRESET_ROUTE);
+  assert.ok(handler, '会话 preset 路由未注册');
+
+  const hit = fakeRes();
+  await handler(fakeReq(undefined, 'GET', PRESET_ROUTE + '?session=lit-session'), hit);
+  assert.equal(hit.out.status, 200);
+  assert.deepEqual(JSON.parse(hit.out.body), { ok: true, session: 'lit-session', preset: 'lit-review' });
+
+  const miss = fakeRes();
+  await handler(fakeReq(undefined, 'GET', PRESET_ROUTE + '?session=unknown'), miss);
+  assert.equal(miss.out.status, 200);
+  assert.deepEqual(JSON.parse(miss.out.body), { ok: true, session: 'unknown', preset: '' });
+
+  const bad = fakeRes();
+  await handler(fakeReq('{}', 'POST', PRESET_ROUTE), bad);
+  assert.equal(bad.out.status, 405);
+});
+
+test('currentSessionPreset：会话投影优先于创建头；无 sessionId 返回空；服务缺失不抛错', async () => {
+  const sessions = { get: (sid) => (sid === 'proj-session' ? { id: 'proj-session', agentPreset: 'default' } : undefined) };
+  const projections = { stateOf: () => 'lit-review' };
+  const ctx = {
+    get: (key) => (key === 'sessions' ? sessions : key === 'sessionProjections' ? projections : undefined),
+  };
+  // 投影可用 → 以投影为准（创建头里的 default 不被单独采信）
+  assert.equal(await currentSessionPreset(ctx, 'proj-session'), 'lit-review');
+  // 没有 sessionId → 空 preset（client 端据此不注册 tab）
+  assert.equal(await currentSessionPreset(ctx, ''), '');
+  // 服务全缺 → 不抛错，回落空
+  assert.equal(await currentSessionPreset({ get: () => undefined }, 'no-service'), '');
 });

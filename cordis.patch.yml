@@ -1,12 +1,30 @@
-# dsh-lit-full-search —— Host 插件行（单行声明，无 preset）
+# dsh-lit-full-search —— Host 插件行 + 「文献综述」agent preset
 #
-# 安装方式：在插件目录执行 `npm pack`，然后在 DSH 里
-#   dsh plugin --profile web add <生成的 .tgz 文件路径>
-# 重启 DSH 后生效。
+# 安装方式（链接本地目录，桌面端启动恢复不会卸掉 link: 目录）：
+#   1. 在 profile 的 package.json dependencies 写 "dsh-lit-full-search": "link:<本目录绝对路径>"
+#   2. 把 "dsh-lit-full-search" 加进同一份 package.json 的 dsh.profile.bundles
+#   （从 DSH「插件管理」界面安装时会自动完成这两步）
 #
-# 该行只注册 Host 端插件（全局 5 工具 + 配置路由），不声明 agent preset；
-# 因此任何模式 / 任何 preset 下 5 个工具都可见（dsh-tools 根作用域注册，全局层最先）。
-# Web 客户端（侧栏设置图标 + 设置面板）由 dsh.client 注入。
+# 本 patch 声明两件事：
+#   1. Host 插件行：全局 8 个工具（lit_search / lit_abstract / lit_cited_by /
+#      zotero_search / zotero_collections / lit_to_zotero / zotero_enrich /
+#      zotero_abstract）+ 配置路由 + 诊断路由 + 会话 preset 查询路由。
+#      dsh-tools 根作用域注册 → 任何模式 / 任何 preset 下工具都可见。
+#   2. agent preset「文献综述」（id: lit-review）：本插件不借它装配任何插件行
+#      （plugins: []，纯模式标记），只让会话获得一个可被门控识别的 preset id；
+#      client 半按该 id 决定是否为「本会话」注册中栏「文献综述」工作台 tab。
+#      保持空列表的原因：工具已由上面的 profile 行全局注册，若在 preset 里再挂一次
+#      同名插件，会二次注册工具与路由。后续要在这个模式里装配专属工具或人格时，
+#      往 plugins 追加行即可。
+# Web 客户端（侧栏设置图标 + 设置面板 + 工作台 tab）由 dsh.client 注入。
 - insert:
     - id: dsh-lit-full-search
       name: 'dsh-lit-full-search'
+    - id: preset-lit-review
+      name: '@deepseek-ai/dsh-agent-preset'
+      config:
+        id: lit-review
+        name: 文献综述
+        description: 文献综述工作台模式：中栏出现「文献综述」tab，承载检索 → 筛选 → 精读 → 综合 → 成稿的综述流程。
+        order: 40
+        plugins: []

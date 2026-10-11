@@ -42,16 +42,17 @@ Host 端代码（`lib/*.js`：工具与路由）改动后**通常即时生效**�
 | 工具 | 说明 | 关键参数 |
 | --- | --- | --- |
 | `lit_search` | 学术文献检索：OpenAlex；配置 Semantic Scholar API Key 后**双源检索**，按 DOI 去重合并（单源失败不拖垮整体，记入 `diagnostics`） | `query`(必填), `limit`, `yearFrom`, `yearTo` |
-| `lit_abstract` | 按 DOI 或标题取摘要（OpenAlex） | `doi` / `title` 至少其一 |
+| `lit_abstract` | 按 DOI 或标题取摘要；**OpenAlex 无摘要时自动回退 Semantic Scholar**（配了 S2 key 时，`source` 标 `semanticscholar`） | `doi` / `title` 至少其一 |
 | `lit_cited_by` | 被引列表（DOI 或 OpenAlex work ID） | `identifier`(必填), `limit` |
 | `zotero_search` | 检索本地 Zotero 库（只读）；`library` 可指定群组库 | `query`(必填), `limit`, `qmode`, `library` |
-| `zotero_collections` | 列出 Zotero 库与收藏夹（key / 名称 / 完整路径 / 条目数），用于定位写回目标 | `library`, `query` |
-| `lit_to_zotero` | **批量**把检索到的文献写回指定库/收藏夹（支持群组库）：元数据解析 → 去重 → 新建/加挂（可选挂 OA PDF）→ 报告 | `refs`(必填), `library`, `collection`, `itemTypes`, `dryRun`, `attachPdf` |
+| `zotero_collections` | **浏览 Zotero 结构，三级下钻**：省略 `library` → 列库；给 `library` → 列该库收藏夹（key/名称/完整路径/条目数）；再给 `collection` → 列该收藏夹的条目（key/标题/作者/年份/DOI） | `library`, `query`, `collection`, `limit` |
+| `lit_to_zotero` | **批量**把检索到的文献写回指定库/收藏夹（支持群组库）：元数据解析 → 去重 → 新建/加挂（可选挂 OA PDF）→ 报告 | `refs`(必填), `library`, `collection`, `itemTypes`, `dryRun`, `attachPdf`, `abstractFallback` |
 | `zotero_enrich` | **单点查**：按 item key / DOI / 标题读深**一个** Zotero 条目（含群组库）——书目字段、标签、收藏夹（名称+路径）、笔记、全部附件（可选磁盘路径与存在性）、批注、全文索引缓存；`fields` 可只取指定字段 | `ref`(必填), `library`, `fields`, `include`, `paths`, `maxChars` |
-| `zotero_abstract` | 取**本地 Zotero** 里存的单篇摘要（abstractNote）；只要摘要时用它（与 `lit_abstract` 的外网摘要对称） | `ref`(必填), `library`, `maxChars` |
+| `zotero_abstract` | 取单篇摘要：**优先本地** `abstractNote`，本地为空时按 DOI **自动回退外网**（OpenAlex → S2），`source` 标明来源 | `ref`(必填), `library`, `maxChars`, `externalFallback` |
 
 > 结果统一带卡片渲染（`meta.card='literature'`）；`lit_to_zotero` / `zotero_collections` / `zotero_enrich`
-> 三个 Zotero 工具另有会话卡片（`tool.call.toolview` 按 wire 工具名注册，无 meta 时回落文本结果）。
+> 三个 Zotero 工具另有会话卡片（`tool.call.toolview` 按 wire 工具名注册，无 meta 时回落文本结果）；
+> `zotero_collections` 的卡片按 `meta.kind` 在「收藏夹视图」与「收藏夹条目视图」之间分发。
 
 > **`limit` 的语义**：`lit_search` 的 `limit` 是**每个数据源**的上限 —— 只配 OpenAlex 时返回
 > ≤ `limit` 条；配了 S2 密钥走双源时，两源各取 `limit` 条，按 DOI（无 DOI 按标题+年份）去重后
@@ -123,7 +124,8 @@ zotero_abstract({ ref: "QZX8A2PX", library: "WENJUN_MA's Group" })        → �
 ## 设置面板（「全面文献搜索设置」）
 
 左侧栏「定时任务」下方的「全面文献搜索设置」图标打开设置页（main keyed 面板，
-id `lit-full-search-settings`），分四段：
+id `lit-full-search-settings`）。面板**顶部是「文献综述工作台」入口卡片**（见下节），
+其下分四段：
 
 - **身份标识** —— `mailto`（OpenAlex 礼貌邮箱，提升限流配额；兜底 `LIT_SEARCH_MAILTO`）
   和 `proxy`（外网代理，如 `http://127.0.0.1:7890`；兜底 `LIT_SEARCH_PROXY` / `HTTPS_PROXY`）。
@@ -150,8 +152,43 @@ id `lit-full-search-settings`），分四段：
 
 配置保存到 `$DSH_HOME`（或 `~/.dsh`）下的 `lit-full-search.config.json`；
 Host 端路由：`GET|POST /lit-full-search/api/config`（面板读写）、
-`GET /lit-full-search/api/diagnose`（服务诊断，返回 `{ ranAt, checks }`）。
+`GET /lit-full-search/api/diagnose`（服务诊断，返回 `{ ranAt, checks }`）、
+`GET /lit-full-search/api/session-preset?session=<id>`（会话 preset 查询，供工作台门控使用）。
 保存后立即生效（工具执行时实时读取配置）。
+
+## 文献综述工作台（预设 `lit-review`）
+
+设置面板顶部的「文献综述工作台」卡片 → 点「**进入文献综述工作台**」→ 打开新建会话界面 →
+在预设里选 **「文献综述」** → 该会话中栏出现「**文献综述**」tab，即综述工作台。
+
+工作台当前是**流程骨架**（每格都是后续工作流的落点）：
+
+| # | 步骤 | 计划承载的能力 |
+|---|---|---|
+| 1 | 选题与范围 | 研究问题、时间窗、纳入/排除标准 |
+| 2 | 检索与去重 | `lit_search` 关键词检索 + `lit_cited_by` 滚雪球，结果归档到目标收藏夹 |
+| 3 | 筛选与分级 | 按标题/摘要初筛，记录纳入与排除理由 |
+| 4 | 精读与抽取 | 每篇 L1/L2/L3 笔记与证据表（`zotero_enrich` / `lit_abstract`） |
+| 5 | 综合与共识 | 共识、争议、证据缺口分级 |
+| 6 | 成稿与引用 | 大纲 → 段落 → 引文核对（`lit_to_zotero` 落库） |
+
+### 它是怎么工作的（三个关键机制）
+
+1. **preset 是「模式标记」**：`cordis.patch.yml` 声明 `@deepseek-ai/dsh-agent-preset`
+   行 `id: lit-review`，`plugins: []`。**故意留空**——8 个工具已由 profile 行在根作用域全局
+   注册，若在 preset 里再挂一次同名插件会二次注册工具与路由。后续要在这个模式里装配专属
+   工具或人格，往 `plugins` 追加行即可。
+2. **门控按会话增删 tab**：`conversation.view` 的 tab 列表由**注册条目直接投影**，
+   `render` 返回 `null` **藏不住 tab**。因此 client 半用 renderless 的 `ViewGate` 挂在
+   `conversation.session.header.utilities`（会话作用域），按本会话的 preset 决定
+   **注册或注销 `conversation.view` 条目本身**。带模块级引用计数（多个门控实例共享一份注册，
+   避免互相拆台）与 3 次退避重试（一次瞬时失败不会让 tab 整场缺席）。
+3. **preset 判据由 Host 权威读取**：client 向 `GET /lit-full-search/api/session-preset?session=<id>`
+   查询；Host 侧优先读 `agentPreset` **会话投影**（创建头 + 最新选择事件），创建头里的
+   `default` 绝不单独采信；同时订阅 `agent-preset/selected` 事件，**在会话里切换 preset 时
+   tab 立即出现/消失，无需刷新页面**。
+
+非 `lit-review` 模式的会话**不会**出现这个 tab；把会话的预设换成别的，tab 当场消失。
 
 ## 开发
 
