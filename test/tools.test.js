@@ -104,15 +104,80 @@ test('zotero_enrich 的 fields 投影与 zotero_abstract 的窄输出（render �
   assert.match(full[0].text, /来源：Sci Rep · 2019/);
   assert.match(full[0].text, /DOI: 10\.1\/a/);
 
-  // zotero_abstract：命中 / 本地无摘要 / 未命中
-  const hit = abs.render({}, { found: true, ref: 'K1', library: 'L', libraryKey: 'user', key: 'K1', title: 'Paper A', DOI: '10.1/a', abstractNote: 'Abstract body.', chars: 14, truncated: false });
+  // zotero_abstract：本地命中 / 本地与外网都无 / 未命中
+  const hit = abs.render({}, { found: true, ref: 'K1', library: 'L', libraryKey: 'user', key: 'K1', title: 'Paper A', DOI: '10.1/a', abstractNote: 'Abstract body.', chars: 14, truncated: false, source: 'zotero' });
   assert.equal(hit[0].text.split('\n').length, 2, '命中时只有出处 + 摘要两行');
   assert.match(hit[0].text, /Paper A（K1 · L · 10\.1\/a）/);
-  const empty = abs.render({}, { found: true, ref: 'K1', library: 'L', libraryKey: 'user', key: 'K1', title: 'Paper A', DOI: '', abstractNote: '', chars: 0, truncated: false });
-  assert.match(empty[0].text, /abstractNote 为空/);
-  assert.match(empty[0].text, /lit_abstract/);
+  assert.match(hit[0].text, /来源: 本地 Zotero/);
+  // 外网回退命中：要标明来源不是本地
+  const fromNet = abs.render({}, { found: true, ref: 'K1', library: 'L', libraryKey: 'user', key: 'K1', title: 'Paper A', DOI: '10.1/a', abstractNote: 'S2 body.', chars: 8, truncated: false, source: 'semanticscholar' });
+  assert.match(fromNet[0].text, /来源: semanticscholar（本地无摘要，已回退外网）/);
+  const empty = abs.render({}, { found: true, ref: 'K1', library: 'L', libraryKey: 'user', key: 'K1', title: 'Paper A', DOI: '10.1/a', abstractNote: '', chars: 0, truncated: false, source: '' });
+  assert.match(empty[0].text, /本地 Zotero 与外网（OpenAlex \/ S2）都没有这篇的摘要/);
   const miss = abs.render({ ref: 'NOPE' }, { found: false, ref: 'NOPE', library: 'L', libraryKey: 'user', hint: 'hint' });
   assert.match(miss[0].text, /未在「L」/);
+});
+
+test('zotero_abstract：本地 abstractNote 为空时按 DOI 回退外网（OpenAlex → S2），source 标明来源', async () => {
+  const abs = toolDefinitions.find((d) => d.name === 'zotero_abstract');
+  const prevS2 = process.env.LIT_SEARCH_S2_API_KEY;
+  // 注意：ref 必须是 8 位 item key（短串会被当成标题去检索）
+  const KEY = 'QZX8A2PX';
+  const item = (abstractNote) => ({
+    key: KEY,
+    version: 1,
+    data: { itemType: 'journalArticle', title: 'Paper A', DOI: '10.1/a', abstractNote, creators: [] },
+  });
+
+  // 本地命中 → 不联网，source=zotero
+  let calls = stubFetch(item('local body'));
+  const local = await abs.execute({ ref: KEY });
+  assert.equal(local.source, 'zotero');
+  assert.equal(local.abstractNote, 'local body');
+  assert.ok(!calls.some((c) => /openalex|semanticscholar/.test(c.url)), '本地有摘要时不应发外网请求');
+
+  // 本地为空 + OpenAlex 有 → 回退 OpenAlex
+  calls = stubFetch((_i, url) => {
+    if (url.includes('openalex.org/works/doi:')) {
+      return { id: 'W1', display_name: 'Paper A', abstract_inverted_index: { From: [0], openalex: [1] } };
+    }
+    return item('');
+  });
+  const viaOa = await abs.execute({ ref: KEY });
+  assert.equal(viaOa.source, 'openalex');
+  assert.equal(viaOa.abstractNote, 'From openalex');
+  assert.equal(viaOa.found, true);
+  assert.equal(viaOa.key, KEY, '回退不应丢掉本地条目的 key');
+
+  // 本地为空 + OpenAlex 无 + 配了 S2 → 回退 S2
+  process.env.LIT_SEARCH_S2_API_KEY = 'TEST-S2';
+  try {
+    calls = stubFetch((_i, url) => {
+      if (url.includes('semanticscholar.org')) return { paperId: 'P1', title: 'Paper A', abstract: '  S2   abstract ' };
+      if (url.includes('openalex.org/works/doi:')) return { id: 'W1', display_name: 'Paper A', abstract_inverted_index: null };
+      return item('');
+    });
+    const viaS2 = await abs.execute({ ref: KEY });
+    assert.equal(viaS2.source, 'semanticscholar');
+    assert.equal(viaS2.abstractNote, 'S2 abstract', 'S2 摘要要压掉多余空白');
+
+    // externalFallback:false → 严格只读本地
+    calls = stubFetch(item(''));
+    const noNet = await abs.execute({ ref: KEY, externalFallback: false });
+    assert.equal(noNet.abstractNote, '');
+    assert.equal(noNet.source, '');
+    assert.ok(!calls.some((c) => /openalex|semanticscholar/.test(c.url)), 'externalFallback:false 时不应发外网请求');
+
+    // 条目没有 DOI → 无法回退，保持空
+    const noDoiKey = 'ABCD1234';
+    calls = stubFetch({ key: noDoiKey, version: 1, data: { itemType: 'journalArticle', title: 'No DOI', DOI: '', abstractNote: '', creators: [] } });
+    const noDoi = await abs.execute({ ref: noDoiKey });
+    assert.equal(noDoi.abstractNote, '');
+    assert.ok(!calls.some((c) => /openalex|semanticscholar/.test(c.url)), '没有 DOI 时无法回退');
+  } finally {
+    if (prevS2 === undefined) delete process.env.LIT_SEARCH_S2_API_KEY;
+    else process.env.LIT_SEARCH_S2_API_KEY = prevS2;
+  }
 });
 
 test('新增工具：zotero_collections / lit_to_zotero 的参数 schema 与 render 冒烟', () => {
@@ -375,8 +440,61 @@ test('lit_abstract：缺参抛错、miss 返回 missing、命中裁剪摘要', a
   assert.equal(hit.abstract.length, 2000);
 });
 
-/** 造一个带 abstract_inverted_index 的 work JSON。 */
-function mapOpenAlexWorkShim({ title, abstract, doi }) {
+test('lit_abstract：OpenAlex 无摘要时回退 S2（回归：Labaune 2013 这类奠基工作被漏报成无摘要）', async () => {
+  const def = toolDefinitions.find((d) => d.name === 'lit_abstract');
+  const prevS2 = process.env.LIT_SEARCH_S2_API_KEY;
+
+  // 未配 S2 key → 不回退，维持 missing（且不应对 S2 发请求）
+  delete process.env.LIT_SEARCH_S2_API_KEY;
+  let calls = stubFetch({ id: 'W1', display_name: 'No Abstract Paper', abstract_inverted_index: null });
+  const noKey = await def.execute({ doi: '10.1/noabs' });
+  assert.equal(noKey.status, 'missing');
+  assert.equal(calls.length, 1, '无 S2 key 时不应请求 S2');
+
+  process.env.LIT_SEARCH_S2_API_KEY = 'TEST-S2';
+  try {
+    // OpenAlex 无摘要 + S2 有 → 回退命中，source 标 semanticscholar
+    calls = stubFetch((_i, url) => {
+      if (url.includes('semanticscholar.org')) {
+        return { paperId: 'P1', title: 'No Abstract Paper', abstract: '  S2   abstract\n body. ' };
+      }
+      return { id: 'W1', display_name: 'No Abstract Paper', abstract_inverted_index: null };
+    });
+    const hit = await def.execute({ doi: '10.1/noabs' });
+    assert.equal(hit.status, 'complete');
+    assert.equal(hit.source, 'semanticscholar');
+    assert.equal(hit.abstract, 'S2 abstract body.', 'S2 摘要要压掉多余空白');
+    assert.equal(hit.title, 'No Abstract Paper');
+    assert.equal(calls.length, 2);
+    assert.ok(calls[1].url.includes('/paper/DOI:10.1%2Fnoabs'), `S2 按 DOI 查：${calls[1].url}`);
+
+    // OpenAlex 有摘要 → 不多余请求 S2
+    // 注意：DOI 路径走 /works/doi:xxx，返回的是 work 对象本身（不是 {results:[…]}）
+    calls = stubFetch(mapOpenAlexWorkShim({ title: 'Has Abstract', abstract: 'openalex body', doi: '10.1/hasabs' }));
+    const oaHit = await def.execute({ doi: '10.1/hasabs' });
+    assert.equal(oaHit.source, 'openalex');
+    assert.equal(oaHit.abstract, 'openalex body');
+    assert.equal(calls.length, 1, 'OpenAlex 已有摘要时不应再查 S2');
+
+    // S2 也没有 → 仍 missing（不抛错）
+    calls = stubFetch((_i, url) => {
+      if (url.includes('semanticscholar.org')) {
+        const err = new Error('HTTP 404 Not Found');
+        err.status = 404;
+        throw err;
+      }
+      return { id: 'W1', display_name: 'Ghost', abstract_inverted_index: null };
+    });
+    const both = await def.execute({ doi: '10.1/ghost' });
+    assert.equal(both.status, 'missing');
+    assert.equal(both.abstract, '');
+  } finally {
+    if (prevS2 === undefined) delete process.env.LIT_SEARCH_S2_API_KEY;
+    else process.env.LIT_SEARCH_S2_API_KEY = prevS2;
+  }
+});
+
+/** 造一个带 abstract_inverted_index 的 work JSON。 */function mapOpenAlexWorkShim({ title, abstract, doi }) {
   const index = {};
   abstract.split(' ').forEach((w, i) => {
     (index[w] = index[w] || []).push(i);
