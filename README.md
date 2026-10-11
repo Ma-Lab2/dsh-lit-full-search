@@ -174,10 +174,15 @@ Host 端路由：`GET|POST /lit-full-search/api/config`（面板读写）、
 
 ### 它是怎么工作的（三个关键机制）
 
-1. **preset 是「模式标记」**：`cordis.patch.yml` 声明 `@deepseek-ai/dsh-agent-preset`
-   行 `id: lit-review`，`plugins: []`。**故意留空**——8 个工具已由 profile 行在根作用域全局
-   注册，若在 preset 里再挂一次同名插件会二次注册工具与路由。后续要在这个模式里装配专属
-   工具或人格，往 `plugins` 追加行即可。
+1. **preset 是「这个 agent 的能力组合」，不是附加层**：`cordis.patch.yml` 声明
+   `@deepseek-ai/dsh-agent-preset` 行 `id: lit-review`，并**逐行列出**该模式要哪些能力。
+   为什么不能留空：在桌面 / Web profile 里，`@deepseek-ai/dsh-web-app` 这一层把 24 个能力行
+   全部 `disabled: true`（`tool-fs`、`tool-fs-search`、`tool-pwsh`、`skill-filesystem`、
+   `tool-skill`、`agent-instructions`、`compaction-*`、`tool-subagent*`、`tool-todo`、
+   `tool-web`…），改由**每个 agent preset 逐 agent 重新声明**；`dsh-base` 里虽声明过，
+   但被 web 层覆盖。**plugins 留空 = 该会话只剩根作用域工具**（本插件的 8 个文献工具、
+   mnemon、`web_call` 等）：能写出综述，但读不了项目文件、调不出任何 skill、不加载项目
+   AGENTS.md、没有上下文压缩。详见下节。
 2. **门控按会话增删 tab**：`conversation.view` 的 tab 列表由**注册条目直接投影**，
    `render` 返回 `null` **藏不住 tab**。因此 client 半用 renderless 的 `ViewGate` 挂在
    `conversation.session.header.utilities`（会话作用域），按本会话的 preset 决定
@@ -185,10 +190,44 @@ Host 端路由：`GET|POST /lit-full-search/api/config`（面板读写）、
    避免互相拆台）与 3 次退避重试（一次瞬时失败不会让 tab 整场缺席）。
 3. **preset 判据由 Host 权威读取**：client 向 `GET /lit-full-search/api/session-preset?session=<id>`
    查询；Host 侧优先读 `agentPreset` **会话投影**（创建头 + 最新选择事件），创建头里的
-   `default` 绝不单独采信；同时订阅 `agent-preset/selected` 事件，**在会话里切换 preset 时
-   tab 立即出现/消失，无需刷新页面**。
+   `default` 绝不单独采信。
+   **已知限制**：preset 在会话视图挂载时解析一次（带 3 次退避重试），所以「会话中途切换 preset」
+   要等会话视图重新挂载（刷新/重开）tab 才变；正常路径（新建会话时选该预设）不受影响。
+   `client.js` 里预留的 `ctx.get('remote')` 事件订阅用于将来做实时切换，但当前客户端 Service
+   目录（layout/locale/sessions/slots/theme/timer/uiWorkspace/workspaces）里没有这类事件总线，
+   该分支恒不触发——已在代码注释中标注。
 
-非 `lit-review` 模式的会话**不会**出现这个 tab；把会话的预设换成别的，tab 当场消失。
+非 `lit-review` 模式的会话**不会**出现这个 tab。
+
+### 预设的能力组合（17 行，按需裁剪而非照抄 standard）
+
+| 分组 | 行 | 作用 |
+|---|---|---|
+| 人格与规则 | `persona`、`agent-instructions` | 工作目录提示；加载项目 AGENTS.md（不编造文献/DOI、SI 单位、文献目录规则） |
+| 技能 | `skill-filesystem`、`tool-skill` | nature-* / paper-digest / lit-to-project / revise-* 等全部技能 |
+| 文件 | `tool-fs`、`tool-fs-search` | 读 `Literatures/` 的 pdfs/parsed/digest；把综述写进项目 |
+| 流程 | `tool-todo`、`planning`（plan-mode） | 多步进度；先出大纲再执行 |
+| 上下文 | `compaction` 组（basic / compact 命令 / 结果裁剪） | 长综述的上下文压缩 |
+| 并行 | `delegation` 组（subagent / fork / workflow） | 多篇并行精读、分工写作 |
+| 交互与交付 | `tool-ask-user`、`present`、`tool-web`、`command-goal`、`tool-goal` | 提问、交付物、联网兜底、目标 |
+| shell | `tool-bash` / `tool-pwsh` | 带平台守卫，与上游 standard 一致 |
+
+**有意不含**（上游 standard 有、这里不声明）：`tool-jobs`、`tool-subagent-codex`、
+`tool-subagent-claude-code`、`tool-ralph`、`tool-plugin-manager`（后四个在上游本来就是
+`disabled: true`）。需要 `tool-jobs`（后台任务）时加一行即可。
+
+**漂移检查**：这些行是上游 `standard.patch.yml` 的快照，上游增删或改配置时本 preset 不会
+自动跟随。发布前跑：
+
+```bash
+node work/check-preset-drift.mjs        # 自动探测桌面端运行时；也可传 standard.patch.yml 路径
+```
+
+它报三类：`[未声明]`（有意的裁剪）、`[多余]`（本 preset 有而上游没有，多为拼写错误）、
+`[漂移]`（两边都有但内容不同，如 plan-mode 的 section 文本）。发现后两类时退出码为 1。
+
+回归测试见 `test/preset-composition.test.js`：把「plugins 不能留空」和「必须声明哪些能力行」
+钉死，防止再次退化。
 
 ## 开发
 

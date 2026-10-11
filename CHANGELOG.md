@@ -6,6 +6,30 @@ The format is based on Keep a Changelog and this project follows Semantic Versio
 
 ## [Unreleased]
 
+### Fixed
+- **「文献综述」preset 的能力组合为空，导致该模式的 agent 静默残废**（v1.2.0 引入）：
+  当初把 `plugins` 留成 `[]`，理由是「工具已由 profile 行全局注册，preset 只是模式标记」——
+  这个前提是错的。在桌面 / Web profile 里，`@deepseek-ai/dsh-web-app` 这一层把 24 个能力行
+  全部 `disabled: true`（`tool-fs` / `tool-fs-search` / `tool-pwsh` / `tool-bash` / `tool-jobs` /
+  `skill-filesystem` / `tool-skill` / `command-goal` / `tool-goal` / `plan-mode` / `compaction-*` /
+  `tool-subagent*` / `workflow-ptc` / `tool-workflow` / `tool-ralph` / **`agent-instructions`** /
+  `tool-todo` / `tool-web`），改由**每个 agent preset 逐 agent 重新声明**；`dsh-base` 里虽声明过
+  这些行，但被 web 层覆盖，profile 里另外两个 bundle 也不会重新打开。于是空 preset 的会话只剩
+  **根作用域**工具（本插件 8 个文献工具、mnemon、`web_call` 等）——实测那次综述会话的工具清单为
+  `lit_abstract×53 / lit_search×13 / web_call×3 / lit_cited_by×2 / mnemon×4 / zotero×3 /
+  sidebar_open×1`，零 `pwsh` / `read` / `write` / `todo_write` / `skill`：综述写得出来，但读不了
+  项目文件、调不出任何技能、**不加载项目 AGENTS.md**、没有上下文压缩。
+  现按「文献综述真正需要的能力」声明 **17 行**（而非照抄上游 standard 的 33 行）：`persona`、
+  `agent-instructions`、`skill-filesystem` + `tool-skill`、`tool-fs` + `tool-fs-search`、
+  `tool-todo`、`tool-bash` / `tool-pwsh`（平台守卫）、`tool-web`、`tool-ask-user`、`present`、
+  `command-goal` + `tool-goal`、`planning`（plan-mode 组）、`compaction` 组、`delegation` 组；
+  有意不含 `tool-jobs`、`tool-subagent-codex` / `claude-code`、`tool-ralph`、`tool-plugin-manager`。
+  新增 `test/preset-composition.test.js`（3 项）：钉死「plugins 不能留空」、必须声明的 14 个能力行、
+  shell 行的平台守卫（已在旧的空列表下验证必红）。
+  新增 `work/check-preset-drift.mjs`：与上游 `standard.patch.yml` 对照，报出 `[未声明]` /
+  `[多余]` / `[漂移]`（如 plan-mode 的 section 文本），后两类退出码 1，发布前跑。
+  该组合已用上游校验器验证：`entryListProblem(plugins) === undefined`。
+
 ## [1.2.0] - 2026-10-11
 
 新增「文献综述」工作台（agent preset + 中栏 tab + 设置入口）；修复插件 CSS 自 v1.1.0 起从未生效、
