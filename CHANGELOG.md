@@ -6,6 +6,11 @@ The format is based on Keep a Changelog and this project follows Semantic Versio
 
 ## [Unreleased]
 
+## [1.2.1] - 2026-10-11
+
+修复「文献综述」模式（preset `lit-review`）的能力组合为空、导致该模式的 agent 静默残废
+（v1.2.0 引入的回归）；补齐回归测试与上游漂移检查。
+
 ### Fixed
 - **「文献综述」preset 的能力组合为空，导致该模式的 agent 静默残废**（v1.2.0 引入）：
   当初把 `plugins` 留成 `[]`，理由是「工具已由 profile 行全局注册，preset 只是模式标记」——

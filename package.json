@@ -1,6 +1,6 @@
 {
   "name": "dsh-lit-full-search",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "description": "DSH 文献检索插件：侧栏「全面文献搜索设置」面板（OpenAlex 身份、Semantic Scholar 与 Zotero 密钥、检索预算）+ 全局检索/归档工具 + 服务诊断。",
   "type": "module",
   "main": "lib/index.js",
